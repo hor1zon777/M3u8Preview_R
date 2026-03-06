@@ -1,6 +1,6 @@
 import { useParams, useNavigate } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useRef, useCallback, type PointerEvent as ReactPointerEvent } from 'react';
 import { ArrowLeft } from 'lucide-react';
 import { mediaApi } from '../services/mediaApi.js';
 import { historyApi } from '../services/historyApi.js';
@@ -17,9 +17,9 @@ export function PlaybackPage() {
   const queryClient = useQueryClient();
   const [overlayVisible, setOverlayVisible] = useState(true);
   const hideTimerRef = useRef<ReturnType<typeof setTimeout>>();
+  const lastPointerTypeRef = useRef<'mouse' | 'touch' | 'pen'>('mouse');
   const videoRef = useRef<HTMLVideoElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
-  const isTouchDeviceRef = useRef(false);
   const isDraggingRef = useRef(false);
 
   const { data: media, isLoading, error } = useQuery({
@@ -73,10 +73,32 @@ export function PlaybackPage() {
     });
   }, []);
 
+  const handleSurfaceClick = useCallback(() => {
+    if (lastPointerTypeRef.current !== 'mouse') {
+      toggleOverlay();
+      return;
+    }
+
+    const video = videoRef.current;
+    if (!video) return;
+
+    setOverlayVisible(true);
+
+    if (video.paused) {
+      void video.play().catch(() => undefined);
+      resetHideTimer();
+      return;
+    }
+
+    video.pause();
+    if (hideTimerRef.current) {
+      clearTimeout(hideTimerRef.current);
+    }
+  }, [resetHideTimer, toggleOverlay]);
+
   // 桌面端：鼠标移动时显示 + 重置自动隐藏
   const handleMouseMove = useCallback(() => {
-    // 触摸设备会模拟 mousemove 事件，需要忽略
-    if (isTouchDeviceRef.current) return;
+    lastPointerTypeRef.current = 'mouse';
     setOverlayVisible(true);
     // 拖拽进度条期间不重置定时器，避免鼠标移动反复重置
     if (!isDraggingRef.current) {
@@ -84,9 +106,10 @@ export function PlaybackPage() {
     }
   }, [resetHideTimer]);
 
-  // 检测触摸设备
-  const handleTouchStart = useCallback(() => {
-    isTouchDeviceRef.current = true;
+  const handlePointerDown = useCallback((e: ReactPointerEvent<HTMLDivElement>) => {
+    if (e.pointerType === 'mouse' || e.pointerType === 'touch' || e.pointerType === 'pen') {
+      lastPointerTypeRef.current = e.pointerType;
+    }
   }, []);
 
   // 初始化：启动自动隐藏定时器
@@ -176,8 +199,6 @@ export function PlaybackPage() {
       ref={containerRef}
       className="fixed inset-0 bg-black z-50"
       style={{ cursor: overlayVisible ? 'default' : 'none' }}
-      onMouseMove={handleMouseMove}
-      onTouchStart={handleTouchStart}
     >
       {/* 全屏播放器 */}
       {progressFetched ? (
@@ -196,10 +217,16 @@ export function PlaybackPage() {
         </div>
       )}
 
-      {/* 轻触区域：点击切换覆盖层 */}
+      {/* 点击区域：PC 切换播放，触摸设备切换覆盖层 */}
       <div
         className="absolute inset-0 z-[5]"
-        onClick={toggleOverlay}
+        onPointerDown={handlePointerDown}
+        onPointerMove={(e) => {
+          if (e.pointerType === 'mouse') {
+            handleMouseMove();
+          }
+        }}
+        onClick={handleSurfaceClick}
       />
 
       {/* 顶部覆盖栏 */}

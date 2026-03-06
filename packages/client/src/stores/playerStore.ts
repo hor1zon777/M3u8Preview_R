@@ -18,8 +18,7 @@ interface PlayerState {
   setBuffering: (buffering: boolean) => void;
   setCurrentTime: (time: number) => void;
   setDuration: (duration: number) => void;
-  setVolume: (volume: number) => void;
-  toggleMute: () => void;
+  setAudioState: (audio: { volume: number; isMuted: boolean }) => void;
   setFullscreen: (fullscreen: boolean) => void;
   setQuality: (quality: number) => void;
   setQualities: (qualities: Array<{ index: number; height: number; bitrate: number }>) => void;
@@ -43,8 +42,10 @@ export const usePlayerStore = create<PlayerState>((set) => ({
   setBuffering: (isBuffering) => set({ isBuffering }),
   setCurrentTime: (currentTime) => set({ currentTime }),
   setDuration: (duration) => set({ duration }),
-  setVolume: (volume) => set({ volume, isMuted: volume === 0 }),
-  toggleMute: () => set((state) => ({ isMuted: !state.isMuted })),
+  setAudioState: ({ volume, isMuted }) => {
+    const normalizedVolume = Math.max(0, Math.min(1, volume));
+    return set({ volume: normalizedVolume, isMuted });
+  },
   setFullscreen: (isFullscreen) => set({ isFullscreen }),
   setQuality: (quality) => set({ quality }),
   setQualities: (qualities) => set({ qualities }),
@@ -54,6 +55,8 @@ export const usePlayerStore = create<PlayerState>((set) => ({
     isBuffering: false,
     currentTime: 0,
     duration: 0,
+    volume: 1,
+    isMuted: false,
     quality: -1,
     qualities: [],
   }),

@@ -68,7 +68,17 @@ export const VideoPlayer = forwardRef<HTMLVideoElement, VideoPlayerProps>(
     const mediaRetryRef = useRef(0);
     const proxyAttemptedRef = useRef(false);
     const mountedRef = useRef(true);
-    const { setPlaying, setCurrentTime, setDuration, setQualities, setQuality, setBuffering, quality, reset } = usePlayerStore();
+    const {
+      setPlaying,
+      setCurrentTime,
+      setDuration,
+      setQualities,
+      setQuality,
+      setBuffering,
+      setAudioState,
+      quality,
+      reset,
+    } = usePlayerStore();
 
     // 暴露内部 videoRef 给父组件
     useImperativeHandle(ref, () => videoRef.current!, []);
@@ -238,6 +248,9 @@ export const VideoPlayer = forwardRef<HTMLVideoElement, VideoPlayerProps>(
       const handleWaiting = () => setBuffering(true);
       const handleCanPlay = () => setBuffering(false);
       const handlePlaying = () => setBuffering(false);
+      const handleVolumeChange = () => {
+        setAudioState({ volume: video.volume, isMuted: video.muted });
+      };
 
       video.addEventListener('timeupdate', handleTimeUpdate);
       video.addEventListener('durationchange', handleDurationChange);
@@ -246,6 +259,9 @@ export const VideoPlayer = forwardRef<HTMLVideoElement, VideoPlayerProps>(
       video.addEventListener('waiting', handleWaiting);
       video.addEventListener('canplay', handleCanPlay);
       video.addEventListener('playing', handlePlaying);
+      video.addEventListener('volumechange', handleVolumeChange);
+
+      handleVolumeChange();
 
       return () => {
         video.removeEventListener('timeupdate', handleTimeUpdate);
@@ -255,8 +271,9 @@ export const VideoPlayer = forwardRef<HTMLVideoElement, VideoPlayerProps>(
         video.removeEventListener('waiting', handleWaiting);
         video.removeEventListener('canplay', handleCanPlay);
         video.removeEventListener('playing', handlePlaying);
+        video.removeEventListener('volumechange', handleVolumeChange);
       };
-    }, [setCurrentTime, setDuration, setPlaying, setBuffering, onTimeUpdate]);
+    }, [setCurrentTime, setDuration, setPlaying, setBuffering, setAudioState, onTimeUpdate]);
 
     // Keyboard shortcuts（仅在 controls=true 时由本组件处理全屏）
     useEffect(() => {
@@ -283,14 +300,22 @@ export const VideoPlayer = forwardRef<HTMLVideoElement, VideoPlayerProps>(
             e.preventDefault();
             video.currentTime = Math.min(video.duration, video.currentTime + 10);
             break;
-          case 'ArrowUp':
+          case 'ArrowUp': {
             e.preventDefault();
-            video.volume = Math.min(1, video.volume + 0.1);
+            const baseVolume = video.muted ? 0 : video.volume;
+            const nextVolume = Math.min(1, Math.round((baseVolume + 0.1) * 10) / 10);
+            video.volume = nextVolume;
+            video.muted = nextVolume === 0;
             break;
-          case 'ArrowDown':
+          }
+          case 'ArrowDown': {
             e.preventDefault();
-            video.volume = Math.max(0, video.volume - 0.1);
+            const baseVolume = video.muted ? 0 : video.volume;
+            const nextVolume = Math.max(0, Math.round((baseVolume - 0.1) * 10) / 10);
+            video.volume = nextVolume;
+            video.muted = nextVolume === 0;
             break;
+          }
           case 'f':
             // controls=false 时由 PlaybackPage 处理全屏
             if (controls) {

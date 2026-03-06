@@ -1,5 +1,5 @@
-import { useState, useRef, useCallback, useEffect, type RefObject } from 'react';
-import { Play, Pause, Maximize, Minimize, Loader2 } from 'lucide-react';
+import { useState, useRef, useCallback, useEffect, type ChangeEvent, type RefObject } from 'react';
+import { Play, Pause, Maximize, Minimize, Loader2, Volume1, Volume2, VolumeX } from 'lucide-react';
 import { usePlayerStore } from '../../stores/playerStore.js';
 import { formatDuration } from '../../lib/utils.js';
 
@@ -12,11 +12,22 @@ interface PlayerControlsProps {
 }
 
 export function PlayerControls({ videoRef, containerRef, onDragStateChange }: PlayerControlsProps) {
-  const { isPlaying, isBuffering, currentTime, duration, isFullscreen, setFullscreen, setCurrentTime } = usePlayerStore();
+  const {
+    isPlaying,
+    isBuffering,
+    currentTime,
+    duration,
+    isFullscreen,
+    volume,
+    isMuted,
+    setFullscreen,
+    setCurrentTime,
+  } = usePlayerStore();
 
   const [isDragging, setIsDragging] = useState(false);
   const [showRateMenu, setShowRateMenu] = useState(false);
   const [playbackRate, setPlaybackRate] = useState(1);
+  const lastVolumeRef = useRef(1);
   const progressBarRef = useRef<HTMLDivElement>(null);
   const rateMenuRef = useRef<HTMLDivElement>(null);
 
@@ -182,6 +193,41 @@ export function PlayerControls({ videoRef, containerRef, onDragStateChange }: Pl
     setShowRateMenu(false);
   }, [videoRef]);
 
+  const handleVolumeChange = useCallback((e: ChangeEvent<HTMLInputElement>) => {
+    const video = videoRef.current;
+    if (!video) return;
+
+    const nextVolume = Number(e.target.value);
+    video.volume = nextVolume;
+    video.muted = nextVolume === 0;
+
+    if (nextVolume > 0) {
+      lastVolumeRef.current = nextVolume;
+    }
+  }, [videoRef]);
+
+  const toggleMute = useCallback(() => {
+    const video = videoRef.current;
+    if (!video) return;
+
+    if (video.muted || video.volume === 0) {
+      const restoredVolume = lastVolumeRef.current > 0 ? lastVolumeRef.current : 1;
+      video.volume = restoredVolume;
+      video.muted = false;
+    } else {
+      if (video.volume > 0) {
+        lastVolumeRef.current = video.volume;
+      }
+      video.muted = true;
+    }
+  }, [videoRef]);
+
+  useEffect(() => {
+    if (volume > 0) {
+      lastVolumeRef.current = volume;
+    }
+  }, [volume]);
+
   // 点击外部关闭倍速菜单
   useEffect(() => {
     if (!showRateMenu) return;
@@ -208,6 +254,9 @@ export function PlayerControls({ videoRef, containerRef, onDragStateChange }: Pl
 
   const displayTime = isDragging ? dragTimeRef.current : currentTime;
   const progressPercent = duration > 0 ? (displayTime / duration) * 100 : 0;
+  const displayVolume = isMuted ? 0 : volume;
+  const volumePercent = Math.round(displayVolume * 100);
+  const VolumeIcon = isMuted || volume === 0 ? VolumeX : volume < 0.5 ? Volume1 : Volume2;
 
   return (
     <div className="w-full px-3 pb-2 pt-1" onClick={(e) => e.stopPropagation()}>
@@ -262,6 +311,38 @@ export function PlayerControls({ videoRef, containerRef, onDragStateChange }: Pl
 
         {/* 弹性空间 */}
         <div className="flex-1" />
+
+        {/* 音量控制 */}
+        <button
+          onClick={toggleMute}
+          className="sm:hidden p-1.5 hover:bg-white/10 rounded-full transition-colors"
+          aria-label={isMuted || volume === 0 ? '取消静音' : '静音'}
+        >
+          <VolumeIcon className="w-5 h-5" />
+        </button>
+
+        <div className="hidden sm:flex items-center gap-2 min-w-[132px]">
+          <button
+            onClick={toggleMute}
+            className="p-1.5 hover:bg-white/10 rounded-full transition-colors"
+            aria-label={isMuted || volume === 0 ? '取消静音' : '静音'}
+          >
+            <VolumeIcon className="w-5 h-5" />
+          </button>
+          <input
+            type="range"
+            min="0"
+            max="1"
+            step="0.01"
+            value={displayVolume}
+            onChange={handleVolumeChange}
+            className="h-1 w-20 cursor-pointer accent-emby-green"
+            aria-label="音量调节"
+          />
+          <span className="w-9 text-xs tabular-nums text-white/80 select-none text-right">
+            {volumePercent}%
+          </span>
+        </div>
 
         {/* 倍速选择器 */}
         <div className="relative" ref={rateMenuRef}>
