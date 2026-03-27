@@ -169,6 +169,11 @@ async function main() {
     update: {},
     create: { key: 'allowRegistration', value: 'true' },
   });
+  await prisma.systemSetting.upsert({
+    where: { key: 'enableRateLimit' },
+    update: {},
+    create: { key: 'enableRateLimit', value: 'true' },
+  });
   console.log('System settings created');
 
   console.log('Seed completed!');

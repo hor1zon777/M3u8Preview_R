@@ -5,6 +5,7 @@ import { fileURLToPath } from 'url';
 import archiver from 'archiver';
 import AdmZip from 'adm-zip';
 import { prisma } from '../lib/prisma.js';
+import { invalidateRateLimitSettingCache } from '../middleware/conditionalRateLimit.js';
 import { AppError } from '../middleware/errorHandler.js';
 import type { RestoreResult } from '@m3u8-preview/shared';
 
@@ -28,7 +29,7 @@ export const backupService = {
       playlistItems,
       watchHistory,
       importLogs,
-      systemSettings,
+      rawSystemSettings,
     ] = await Promise.all([
       prisma.user.findMany({
         select: {
@@ -53,6 +54,8 @@ export const backupService = {
       prisma.importLog.findMany(),
       prisma.systemSetting.findMany(),
     ]);
+
+    const systemSettings = rawSystemSettings.filter(setting => setting.key !== 'enableRateLimit');
 
     const backupData = {
       version: '1.0',
@@ -195,6 +198,10 @@ export const backupService = {
 
       // systemSettings 使用 upsert（主键为 key 字符串）
       for (const setting of tables.systemSettings) {
+        if (setting.key === 'enableRateLimit') {
+          continue;
+        }
+
         await tx.systemSetting.upsert({
           where: { key: setting.key },
           update: { value: setting.value },
@@ -202,6 +209,13 @@ export const backupService = {
         });
         totalRecords++;
       }
+
+      await tx.systemSetting.upsert({
+        where: { key: 'enableRateLimit' },
+        update: { value: 'true' },
+        create: { key: 'enableRateLimit', value: 'true' },
+      });
+      totalRecords++;
     }, { timeout: 60000 });
 
     // 事务成功后恢复上传文件（文件系统不支持事务）
@@ -234,6 +248,8 @@ export const backupService = {
         uploadsRestored++;
       }
     }
+
+    invalidateRateLimitSettingCache();
 
     const tablesRestored = requiredTables.filter(
       (t) => tables[t] && tables[t].length > 0,

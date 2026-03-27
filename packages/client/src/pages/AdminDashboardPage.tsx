@@ -34,6 +34,7 @@ export function AdminDashboardPage() {
   const [settingError, setSettingError] = useState('');
   const settingsLoaded = !!settings;
   const allowRegistration = settings?.find((s) => s.key === 'allowRegistration')?.value !== 'false';
+  const enableRateLimit = settings?.find((s) => s.key === 'enableRateLimit')?.value !== 'false';
 
   if (isLoading) {
     return (
@@ -108,32 +109,61 @@ export function AdminDashboardPage() {
           <Shield className="w-5 h-5 text-emby-text-secondary" />
           <h3 className="text-white font-semibold">系统设置</h3>
         </div>
-        <div className="flex items-center justify-between">
-          <div>
-            <p className="text-white text-sm">允许新用户注册</p>
-            <p className="text-emby-text-muted text-xs mt-0.5">关闭后新用户将无法注册账号</p>
-          </div>
-          <button
-            type="button"
-            role="switch"
-            aria-checked={allowRegistration}
-            disabled={updateSettingMutation.isPending || !settingsLoaded}
-            onClick={() =>
-              updateSettingMutation.mutate({
-                key: 'allowRegistration',
-                value: allowRegistration ? 'false' : 'true',
-              })
-            }
-            className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-emby-green focus:ring-offset-2 focus:ring-offset-emby-bg-card disabled:opacity-50 ${
-              allowRegistration ? 'bg-emby-green' : 'bg-emby-bg-input'
-            }`}
-          >
-            <span
-              className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
-                allowRegistration ? 'translate-x-6' : 'translate-x-1'
+        <div className="space-y-4">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-white text-sm">允许新用户注册</p>
+              <p className="text-emby-text-muted text-xs mt-0.5">关闭后新用户将无法注册账号</p>
+            </div>
+            <button
+              type="button"
+              role="switch"
+              aria-checked={allowRegistration}
+              disabled={updateSettingMutation.isPending || !settingsLoaded}
+              onClick={() =>
+                updateSettingMutation.mutate({
+                  key: 'allowRegistration',
+                  value: allowRegistration ? 'false' : 'true',
+                })
+              }
+              className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-emby-green focus:ring-offset-2 focus:ring-offset-emby-bg-card disabled:opacity-50 ${
+                allowRegistration ? 'bg-emby-green' : 'bg-emby-bg-input'
               }`}
-            />
-          </button>
+            >
+              <span
+                className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                  allowRegistration ? 'translate-x-6' : 'translate-x-1'
+                }`}
+              />
+            </button>
+          </div>
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-white text-sm">启用网站速率限制</p>
+              <p className="text-emby-text-muted text-xs mt-0.5">关闭后将跳过全局、认证、代理、签名与播放量限流</p>
+            </div>
+            <button
+              type="button"
+              role="switch"
+              aria-checked={enableRateLimit}
+              disabled={updateSettingMutation.isPending || !settingsLoaded}
+              onClick={() =>
+                updateSettingMutation.mutate({
+                  key: 'enableRateLimit',
+                  value: enableRateLimit ? 'false' : 'true',
+                })
+              }
+              className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-emby-green focus:ring-offset-2 focus:ring-offset-emby-bg-card disabled:opacity-50 ${
+                enableRateLimit ? 'bg-emby-green' : 'bg-emby-bg-input'
+              }`}
+            >
+              <span
+                className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                  enableRateLimit ? 'translate-x-6' : 'translate-x-1'
+                }`}
+              />
+            </button>
+          </div>
         </div>
         {settingError && (
           <p className="text-red-400 text-xs mt-2">{settingError}</p>

@@ -3,6 +3,7 @@ import rateLimit from 'express-rate-limit';
 import { mediaController } from '../controllers/mediaController.js';
 import { validate } from '../middleware/validate.js';
 import { authenticate, optionalAuth, requireRole } from '../middleware/auth.js';
+import { conditionalRateLimit } from '../middleware/conditionalRateLimit.js';
 import { mediaCreateSchema, mediaUpdateSchema, mediaQuerySchema, idParamSchema } from '@m3u8-preview/shared';
 
 const router = Router();
@@ -24,7 +25,7 @@ router.get('/artists', authenticate, mediaController.getArtists);
 router.get('/:id', validate(idParamSchema, 'params'), mediaController.findById);
 
 // Authenticated routes
-router.post('/:id/views', viewsLimiter, validate(idParamSchema, 'params'), mediaController.incrementViews);
+router.post('/:id/views', conditionalRateLimit(viewsLimiter), validate(idParamSchema, 'params'), mediaController.incrementViews);
 
 // Admin routes
 router.post('/', authenticate, requireRole('ADMIN'), validate(mediaCreateSchema), mediaController.create);

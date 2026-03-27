@@ -1,4 +1,4 @@
-import express from 'express';
+import express, { type Request } from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
 import compression from 'compression';
@@ -20,6 +20,12 @@ import playlistRoutes from './routes/playlistRoutes.js';
 import importRoutes from './routes/importRoutes.js';
 import adminRoutes from './routes/adminRoutes.js';
 import proxyRoutes from './routes/proxyRoutes.js';
+import { conditionalRateLimit, isRateLimitToggleRequest } from './middleware/conditionalRateLimit.js';
+
+function shouldBypassGlobalRateLimit(req: Request): boolean {
+  return isRateLimitToggleRequest(req);
+}
+
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const uploadsDir = path.resolve(__dirname, '../uploads');
@@ -84,10 +90,10 @@ const globalLimiter = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
 });
-app.use('/api/v1', globalLimiter);
+app.use('/api/v1', conditionalRateLimit(globalLimiter, shouldBypassGlobalRateLimit));
 
 // API routes
-app.use('/api/v1/auth', authLimiter, authRoutes);
+app.use('/api/v1/auth', conditionalRateLimit(authLimiter), authRoutes);
 app.use('/api/v1/media', mediaRoutes);
 app.use('/api/v1/categories', categoryRoutes);
 app.use('/api/v1/tags', tagRoutes);

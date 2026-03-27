@@ -3,6 +3,7 @@ import { adminService } from '../services/adminService.js';
 import { asyncHandler } from '../utils/asyncHandler.js';
 import { safePagination } from '../utils/pagination.js';
 import { generateAllMissing, thumbnailQueue } from '../services/thumbnailService.js';
+import { invalidateRateLimitSettingCache } from '../middleware/conditionalRateLimit.js';
 
 type Params = { id: string };
 
@@ -62,6 +63,11 @@ export const adminController = {
   updateSetting: asyncHandler(async (req: Request, res: Response) => {
     const { key, value } = req.body;
     const setting = await adminService.updateSystemSetting(key, value);
+
+    if (key === 'enableRateLimit') {
+      invalidateRateLimitSettingCache();
+    }
+
     res.json({ success: true, data: setting });
   }),
 

@@ -133,9 +133,27 @@ export const updateUserSchema = z.object({
   message: 'At least one of role or isActive must be provided',
 });
 
+const systemSettingKeySchema = z.enum(['siteName', 'allowRegistration', 'enableRateLimit']);
+
 export const updateSettingSchema = z.object({
-  key: z.string().min(1).max(100),
+  key: systemSettingKeySchema,
   value: z.string(),
+}).superRefine(({ key, value }, ctx) => {
+  if ((key === 'allowRegistration' || key === 'enableRateLimit') && value !== 'true' && value !== 'false') {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['value'],
+      message: 'Value must be true or false',
+    });
+  }
+
+  if (key === 'siteName' && value.trim().length === 0) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['value'],
+      message: 'Value cannot be empty',
+    });
+  }
 });
 
 export const addItemBodySchema = z.object({

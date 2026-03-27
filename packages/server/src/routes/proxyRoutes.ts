@@ -8,6 +8,7 @@ import { AppError } from '../middleware/errorHandler.js';
 import { authenticate } from '../middleware/auth.js';
 import { asyncHandler } from '../utils/asyncHandler.js';
 import { signProxyUrl, verifyProxySignature } from '../utils/proxySign.js';
+import { conditionalRateLimit } from '../middleware/conditionalRateLimit.js';
 
 const router = Router();
 
@@ -21,7 +22,7 @@ const proxyLimiter = rateLimit({
   message: { success: false, error: '代理请求过于频繁，请稍后再试' },
 });
 
-router.use(proxyLimiter);
+router.use(conditionalRateLimit(proxyLimiter));
 
 // 签名端点独立限流：每 IP 每 15 分钟最多 60 次（正常使用每次播放只需 1 次签名）
 const signLimiter = rateLimit({
@@ -346,7 +347,7 @@ const CONNECT_TIMEOUT_MS = 15_000;
  * GET /api/v1/proxy/sign?url=<encoded_url>
  * 为指定 m3u8 URL 生成带 HMAC 签名的代理入口 URL
  */
-router.get('/sign', signLimiter, authenticate, asyncHandler(async (req, res) => {
+router.get('/sign', conditionalRateLimit(signLimiter), authenticate, asyncHandler(async (req, res) => {
   const rawUrl = req.query.url as string | undefined;
   if (!rawUrl) {
     throw new AppError('缺少 url 参数', 400);
