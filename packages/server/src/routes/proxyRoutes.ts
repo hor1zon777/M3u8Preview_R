@@ -398,6 +398,8 @@ router.get('/m3u8', asyncHandler(async (req, res) => {
     await validateSegmentDomain(targetUrl);
   }
 
+  const shouldSendMissavReferer = targetUrl.hostname === 'missav.ws' || targetUrl.hostname.endsWith('.missav.ws');
+
   // 连接级别超时控制
   const connectController = new AbortController();
   const connectTimeout = setTimeout(() => connectController.abort(), CONNECT_TIMEOUT_MS);
@@ -413,6 +415,7 @@ router.get('/m3u8', asyncHandler(async (req, res) => {
       signal: totalController.signal,
       headers: {
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+        ...(shouldSendMissavReferer ? { Referer: 'https://missav.ws' } : {}),
         Accept: '*/*',
         ...(req.headers.range ? { Range: req.headers.range } : {}),
       },
