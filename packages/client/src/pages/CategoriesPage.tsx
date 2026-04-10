@@ -4,6 +4,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { FolderTree, Search, Plus } from 'lucide-react';
 import { categoryApi } from '../services/categoryApi.js';
 import { useAuthStore } from '../stores/authStore.js';
+import { resolvePosterUrl } from '../hooks/useVideoThumbnail.js';
 import type { Category, CategoryCreateRequest } from '@m3u8-preview/shared';
 
 // ==================== 相对时间格式化 ====================
@@ -248,7 +249,7 @@ function CategoryCard({ category }: { category: Category }) {
       <div className="aspect-video relative overflow-hidden rounded-t-lg">
         {category.posterUrl ? (
           <img
-            src={category.posterUrl}
+            src={resolvePosterUrl(category.posterUrl)}
             alt={category.name}
             className="w-full h-full object-cover"
             loading="lazy"

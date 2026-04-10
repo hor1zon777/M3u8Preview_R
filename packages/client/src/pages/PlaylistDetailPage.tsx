@@ -10,6 +10,7 @@ import { mediaApi } from '../services/mediaApi.js';
 import { MediaGrid } from '../components/media/MediaGrid.js';
 import { useAuthStore } from '../stores/authStore.js';
 import { useProgressMap } from '../hooks/useProgressMap.js';
+import { resolvePosterUrl } from '../hooks/useVideoThumbnail.js';
 import type { PlaylistItem, Media } from '@m3u8-preview/shared';
 
 // ---------------------------------------------------------------------------
@@ -476,7 +477,7 @@ export function PlaylistDetailPage() {
         {playlist.posterUrl ? (
           <>
             <img
-              src={playlist.posterUrl}
+              src={resolvePosterUrl(playlist.posterUrl)}
               alt=""
               className="absolute inset-0 w-full h-full object-cover blur-xl scale-110"
             />
@@ -492,7 +493,7 @@ export function PlaylistDetailPage() {
           <div className="w-28 h-28 sm:w-36 sm:h-36 rounded-lg overflow-hidden flex-shrink-0 bg-emby-bg-input">
             {playlist.posterUrl ? (
               <img
-                src={playlist.posterUrl}
+                src={resolvePosterUrl(playlist.posterUrl)}
                 alt={playlist.name}
                 className="w-full h-full object-cover"
               />
@@ -650,7 +651,7 @@ export function PlaylistDetailPage() {
                     <div className="w-16 flex-shrink-0">
                       <div className="aspect-video bg-emby-bg-input rounded overflow-hidden">
                         {media.posterUrl ? (
-                          <img src={media.posterUrl} alt={media.title} className="w-full h-full object-cover" />
+                          <img src={resolvePosterUrl(media.posterUrl)} alt={media.title} className="w-full h-full object-cover" />
                         ) : (
                           <div className="w-full h-full flex items-center justify-center text-emby-text-muted text-xs">
                             无封面

@@ -6,6 +6,7 @@ import { categoryApi } from '../services/categoryApi.js';
 import { mediaApi } from '../services/mediaApi.js';
 import { MediaGrid } from '../components/media/MediaGrid.js';
 import { useProgressMap } from '../hooks/useProgressMap.js';
+import { resolvePosterUrl } from '../hooks/useVideoThumbnail.js';
 import { useAuthStore } from '../stores/authStore.js';
 
 const PAGE_SIZE = 24;
@@ -170,7 +171,7 @@ export function CategoryDetailPage() {
         {hasPoster && (
           <div className="absolute inset-0 overflow-hidden">
             <img
-              src={category.posterUrl!}
+              src={resolvePosterUrl(category.posterUrl)!}
               alt=""
               className="w-full h-full object-cover blur-xl scale-110"
             />
@@ -204,7 +205,7 @@ export function CategoryDetailPage() {
           <div className="flex items-end gap-4">
             {hasPoster && (
               <img
-                src={category.posterUrl!}
+                src={resolvePosterUrl(category.posterUrl)!}
                 alt={category.name}
                 className="w-24 h-24 sm:w-32 sm:h-32 object-cover rounded-lg shadow-lg flex-shrink-0"
               />
