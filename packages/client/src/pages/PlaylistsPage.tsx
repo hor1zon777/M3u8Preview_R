@@ -3,7 +3,6 @@ import { Link } from 'react-router-dom';
 import { useInfiniteQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Plus, Search } from 'lucide-react';
 import { playlistApi } from '../services/playlistApi.js';
-import { resolvePosterUrl } from '../hooks/useVideoThumbnail.js';
 import { useAuthStore } from '../stores/authStore.js';
 import type { Playlist } from '@m3u8-preview/shared';
 
@@ -220,7 +219,7 @@ export function PlaylistsPage() {
                 <div className="aspect-video bg-emby-bg-input overflow-hidden">
                   {playlist.posterUrl ? (
                     <img
-                      src={resolvePosterUrl(playlist.posterUrl)}
+                      src={playlist.posterUrl}
                       alt={playlist.name}
                       className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
                     />

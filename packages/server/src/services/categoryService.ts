@@ -1,5 +1,6 @@
 import { prisma } from '../lib/prisma.js';
 import { AppError } from '../middleware/errorHandler.js';
+import { resolveExternalPoster } from './posterDownloadService.js';
 import type { Category, CategoryCreateRequest } from '@m3u8-preview/shared';
 
 function serializeCategory(category: any): Category {
@@ -57,8 +58,9 @@ export const categoryService = {
       throw new AppError('Category with this name or slug already exists', 409);
     }
 
+    const resolvedData = { ...data, posterUrl: await resolveExternalPoster(data.posterUrl) };
     const category = await prisma.category.create({
-      data,
+      data: resolvedData,
       include: {
         _count: { select: { media: true } },
       },
@@ -90,6 +92,11 @@ export const categoryService = {
       if (conflict) {
         throw new AppError('Category with this name or slug already exists', 409);
       }
+    }
+
+    // 下载外部封面图到本地
+    if (data.posterUrl !== undefined) {
+      data = { ...data, posterUrl: await resolveExternalPoster(data.posterUrl) ?? undefined };
     }
 
     const category = await prisma.category.update({

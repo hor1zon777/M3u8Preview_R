@@ -1,5 +1,6 @@
 import { prisma } from '../lib/prisma.js';
 import { AppError } from '../middleware/errorHandler.js';
+import { resolveExternalPoster } from './posterDownloadService.js';
 import type { Playlist, PlaylistItem } from '@m3u8-preview/shared';
 import { serializePlaylist, serializePlaylistItem } from '../utils/serializers.js';
 
@@ -49,11 +50,12 @@ export const playlistService = {
   },
 
   async create(userId: string, data: { name: string; description?: string; posterUrl?: string; isPublic?: boolean }): Promise<Playlist> {
+    const posterUrl = await resolveExternalPoster(data.posterUrl);
     const playlist = await prisma.playlist.create({
       data: {
         name: data.name,
         description: data.description || null,
-        posterUrl: data.posterUrl || null,
+        posterUrl: posterUrl || null,
         isPublic: data.isPublic ?? true,
         userId,
       },
@@ -73,14 +75,18 @@ export const playlistService = {
       throw new AppError('Access denied', 403);
     }
 
+    // 下载外部封面图到本地
+    const updateData: Record<string, any> = {};
+    if (data.name !== undefined) updateData.name = data.name;
+    if (data.description !== undefined) updateData.description = data.description;
+    if (data.posterUrl !== undefined) {
+      updateData.posterUrl = await resolveExternalPoster(data.posterUrl) || null;
+    }
+    if (data.isPublic !== undefined) updateData.isPublic = data.isPublic;
+
     const playlist = await prisma.playlist.update({
       where: { id },
-      data: {
-        ...(data.name !== undefined && { name: data.name }),
-        ...(data.description !== undefined && { description: data.description }),
-        ...(data.posterUrl !== undefined && { posterUrl: data.posterUrl || null }),
-        ...(data.isPublic !== undefined && { isPublic: data.isPublic }),
-      },
+      data: updateData,
       include: {
         _count: { select: { items: true } },
       },

@@ -336,16 +336,8 @@ function isM3u8ContentType(contentType: string | null): boolean {
   );
 }
 
-function isFourhoiHostname(hostname: string): boolean {
-  return hostname === 'fourhoi.com' || hostname.endsWith('.fourhoi.com');
-}
-
 function isSurritHostname(hostname: string): boolean {
   return hostname === 'surrit.com' || hostname.endsWith('.surrit.com');
-}
-
-function isFourhoiPosterRequest(targetUrl: URL): boolean {
-  return isFourhoiHostname(targetUrl.hostname) && ['.jpg', '.jpeg', '.png'].includes(getPathExtension(targetUrl.pathname));
 }
 
 // ==================== 路由处理器 ====================
@@ -393,13 +385,11 @@ router.get('/m3u8', asyncHandler(async (req, res) => {
   }
 
   const targetUrl = await validateProxyUrl(rawUrl);
-  const isFourhoiPoster = isFourhoiPosterRequest(targetUrl);
 
   // 签名验证
   const expires = req.query.expires as string | undefined;
   const sig = req.query.sig as string | undefined;
-  const hasValidSignature = !!expires && !!sig && verifyProxySignature(rawUrl, expires, sig);
-  if (!hasValidSignature && !isFourhoiPoster) {
+  if (!expires || !sig || !verifyProxySignature(rawUrl, expires, sig)) {
     throw new AppError('签名无效或已过期', 403);
   }
 
@@ -407,16 +397,12 @@ router.get('/m3u8', asyncHandler(async (req, res) => {
   const isM3u8 = pathname.endsWith('.m3u8');
 
   // m3u8 入口 URL 的数据库校验已在 /sign 端点完成，此处跳过
-  // fourhoi 封面图允许直接代理；其他非 m3u8 资源仍需校验域名白名单
-  if (!isM3u8 && !isFourhoiPoster) {
+  // segment 请求仍需校验域名白名单，防止恶意 m3u8 内容引用任意域名
+  if (!isM3u8) {
     await validateSegmentDomain(targetUrl);
   }
 
-  const shouldSendMissavReferer = isSurritHostname(targetUrl.hostname) || isFourhoiHostname(targetUrl.hostname);
-
-  if (isFourhoiPoster) {
-    res.setHeader('Vary', 'Origin');
-  }
+  const shouldSendMissavReferer = isSurritHostname(targetUrl.hostname);
 
   // 连接级别超时控制
   const connectController = new AbortController();

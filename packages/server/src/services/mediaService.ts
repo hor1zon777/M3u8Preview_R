@@ -4,6 +4,7 @@ import { AppError } from '../middleware/errorHandler.js';
 import type { MediaCreateRequest, MediaUpdateRequest, MediaQueryParams, PaginatedResponse, Media, ArtistInfo } from '@m3u8-preview/shared';
 import { serializeMedia, serializeMediaList } from '../utils/serializers.js';
 import { deleteThumbnail } from './thumbnailService.js';
+import { resolveExternalPoster } from './posterDownloadService.js';
 
 const mediaInclude = {
   category: true,
@@ -80,9 +81,11 @@ export const mediaService = {
 
   async create(data: MediaCreateRequest): Promise<Media> {
     const { tagIds, ...mediaData } = data;
+    const posterUrl = await resolveExternalPoster(mediaData.posterUrl);
     const media = await prisma.media.create({
       data: {
         ...mediaData,
+        posterUrl,
         tags: tagIds?.length ? {
           create: tagIds.map(tagId => ({ tagId })),
         } : undefined,
@@ -99,6 +102,11 @@ export const mediaService = {
     }
 
     const { tagIds, ...mediaData } = data;
+
+    // 下载外部封面图到本地
+    if (mediaData.posterUrl !== undefined) {
+      mediaData.posterUrl = await resolveExternalPoster(mediaData.posterUrl) ?? undefined;
+    }
 
     // M11: 使用事务确保 tag 替换的原子性
     const media = await prisma.$transaction(async (tx) => {

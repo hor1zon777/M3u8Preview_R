@@ -1,8 +1,6 @@
 services:
   app:
-    build:
-      context: .
-      dockerfile: Dockerfile
+    image: ghcr.io/hor1zon777/m3u8preview_r:latest
     container_name: m3u8preview-app
     environment:
       - NODE_ENV=production

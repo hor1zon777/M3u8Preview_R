@@ -4,6 +4,7 @@ import type { ImportItem, ImportPreviewResponse, ImportResult, ImportError } fro
 import { AppError } from '../middleware/errorHandler.js';
 import { parseText, parseCsv, parseJson, parseExcel } from '../parsers/index.js';
 import { thumbnailQueue } from './thumbnailService.js';
+import { resolveExternalPoster } from './posterDownloadService.js';
 
 export const importService = {
   /**
@@ -101,6 +102,13 @@ export const importService = {
       if (item.tagNames) item.tagNames.forEach(t => uniqueTagNames.add(t));
     }
 
+    // 预下载外部封面图到本地（在事务外执行，避免长时间持锁）
+    const posterUrlMap = new Map<number, string | null>();
+    for (const { index, item } of validItems) {
+      const resolved = await resolveExternalPoster(item.posterUrl);
+      posterUrlMap.set(index, resolved);
+    }
+
     try {
       await prisma.$transaction(async (tx) => {
         // 批量 upsert 分类，构建 name→id Map
@@ -141,7 +149,7 @@ export const importService = {
               data: {
                 title: item.title,
                 m3u8Url: item.m3u8Url,
-                posterUrl: item.posterUrl || null,
+                posterUrl: posterUrlMap.get(index) ?? null,
                 description: item.description || null,
                 year: item.year || null,
                 artist: item.artist || null,
