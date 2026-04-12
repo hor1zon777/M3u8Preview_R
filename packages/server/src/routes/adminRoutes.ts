@@ -32,6 +32,10 @@ router.put('/media/batch-category', validate(batchCategorySchema), adminControll
 router.post('/thumbnails/generate', adminController.generateThumbnails);
 router.get('/thumbnails/status', adminController.getThumbnailStatus);
 
+// Poster migration (外部封面下载到本地)
+router.post('/posters/migrate', adminController.migratePosterImages);
+router.get('/posters/status', adminController.getPosterMigrationStatus);
+
 // Backup management
 router.get('/backup/export', backupController.exportBackup);
 router.post('/backup/import', backupUpload, backupController.importBackup);

@@ -2,6 +2,7 @@ import app from './app.js';
 import { config } from './config.js';
 import { prisma } from './lib/prisma.js';
 import { checkFfmpeg } from './services/thumbnailService.js';
+import { migrateExternalPosters } from './services/posterDownloadService.js';
 import type { Server } from 'http';
 
 let server: Server;
@@ -17,6 +18,11 @@ async function main() {
   server = app.listen(config.port, '0.0.0.0', () => {
     console.log(`Server running on http://0.0.0.0:${config.port}`);
     console.log(`Environment: ${config.nodeEnv}`);
+  });
+
+  // 后台迁移外部封面图到本地（不阻塞启动）
+  migrateExternalPosters().catch((err) => {
+    console.error('[PosterMigration] 启动迁移失败:', err);
   });
 }
 

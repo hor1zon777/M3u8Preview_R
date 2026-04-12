@@ -22,14 +22,15 @@ const upload = multer({
 export const backupUpload = upload.single('file');
 
 export const backupController = {
-  exportBackup: asyncHandler(async (_req: Request, res: Response) => {
+  exportBackup: asyncHandler(async (req: Request, res: Response) => {
     const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
     const filename = `backup-${timestamp}.zip`;
+    const includePosters = req.query.includePosters !== 'false';
 
     res.setHeader('Content-Type', 'application/zip');
     res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
 
-    await backupService.exportBackup(res);
+    await backupService.exportBackup(res, { includePosters });
   }),
 
   importBackup: asyncHandler(async (req: Request, res: Response) => {

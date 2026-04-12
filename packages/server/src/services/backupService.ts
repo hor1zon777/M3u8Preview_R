@@ -12,8 +12,13 @@ import type { RestoreResult } from '@m3u8-preview/shared';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const uploadsDir = path.resolve(__dirname, '../../uploads');
 
+export interface ExportOptions {
+  includePosters?: boolean;
+}
+
 export const backupService = {
-  async exportBackup(outputStream: Writable): Promise<void> {
+  async exportBackup(outputStream: Writable, options: ExportOptions = {}): Promise<void> {
+    const { includePosters = true } = options;
     const archive = archiver('zip', { zlib: { level: 6 } });
     archive.pipe(outputStream);
 
@@ -80,7 +85,23 @@ export const backupService = {
 
     // 添加 uploads 目录
     if (fs.existsSync(uploadsDir)) {
-      archive.directory(uploadsDir, 'uploads');
+      if (includePosters) {
+        archive.directory(uploadsDir, 'uploads');
+      } else {
+        // 不包含封面：排除 posters 子目录，仅打包其余上传文件
+        const postersSubdir = path.join(uploadsDir, 'posters');
+        const children = fs.readdirSync(uploadsDir);
+        for (const child of children) {
+          const childPath = path.join(uploadsDir, child);
+          if (childPath === postersSubdir) continue;
+          const stat = fs.statSync(childPath);
+          if (stat.isDirectory()) {
+            archive.directory(childPath, `uploads/${child}`);
+          } else {
+            archive.file(childPath, { name: `uploads/${child}` });
+          }
+        }
+      }
     }
 
     await archive.finalize();

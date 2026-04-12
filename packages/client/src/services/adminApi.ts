@@ -32,8 +32,15 @@ export const adminApi = {
     await api.put('/admin/settings', { key, value });
   },
 
-  async exportBackup() {
-    const response = await api.get('/admin/backup/export', {
+  async exportBackup(options?: { includePosters?: boolean }) {
+    const params = new URLSearchParams();
+    if (options?.includePosters === false) {
+      params.set('includePosters', 'false');
+    }
+    const query = params.toString();
+    const url = `/admin/backup/export${query ? `?${query}` : ''}`;
+
+    const response = await api.get(url, {
       responseType: 'blob',
       timeout: 300000,
     });
@@ -45,14 +52,14 @@ export const adminApi = {
     const filename = match?.[1] || `backup-${new Date().toISOString().slice(0, 19)}.zip`;
 
     // 创建临时 <a> 标签触发下载
-    const url = URL.createObjectURL(blob);
+    const blobUrl = URL.createObjectURL(blob);
     const a = document.createElement('a');
-    a.href = url;
+    a.href = blobUrl;
     a.download = filename;
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
-    URL.revokeObjectURL(url);
+    URL.revokeObjectURL(blobUrl);
   },
 
   async importBackup(file: File): Promise<RestoreResult> {

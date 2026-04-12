@@ -3,6 +3,7 @@ import { adminService } from '../services/adminService.js';
 import { asyncHandler } from '../utils/asyncHandler.js';
 import { safePagination } from '../utils/pagination.js';
 import { generateAllMissing, thumbnailQueue } from '../services/thumbnailService.js';
+import { migrateExternalPosters, posterMigrationQueue } from '../services/posterDownloadService.js';
 import { invalidateRateLimitSettingCache } from '../middleware/conditionalRateLimit.js';
 
 type Params = { id: string };
@@ -126,5 +127,21 @@ export const adminController = {
     const { ids, categoryId } = req.body;
     const result = await adminService.batchUpdateCategory(ids, categoryId);
     res.json({ success: true, data: result });
+  }),
+
+  /**
+   * POST /admin/posters/migrate - 将外部封面图下载到本地
+   */
+  migratePosterImages: asyncHandler(async (_req: Request, res: Response) => {
+    const count = await migrateExternalPosters();
+    res.json({ success: true, data: { enqueuedCount: count } });
+  }),
+
+  /**
+   * GET /admin/posters/status - 查询封面迁移队列状态
+   */
+  getPosterMigrationStatus: asyncHandler(async (_req: Request, res: Response) => {
+    const status = posterMigrationQueue.getStatus();
+    res.json({ success: true, data: status });
   }),
 };
