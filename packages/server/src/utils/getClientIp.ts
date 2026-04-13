@@ -12,6 +12,18 @@ import { Request } from 'express';
  * 5. req.ip / req.socket.remoteAddress (直连)
  */
 export function getClientIp(req: Request): string {
+  // 调试日志：打印所有相关头信息
+  if (process.env.NODE_ENV !== 'production') {
+    console.log('[getClientIp] Headers:', {
+      'cf-connecting-ip': req.headers['cf-connecting-ip'],
+      'true-client-ip': req.headers['true-client-ip'],
+      'x-real-ip': req.headers['x-real-ip'],
+      'x-forwarded-for': req.headers['x-forwarded-for'],
+      'req.ip': req.ip,
+      'socket.remoteAddress': req.socket?.remoteAddress,
+    });
+  }
+
   // Cloudflare CDN
   const cfConnectingIp = req.headers['cf-connecting-ip'];
   if (typeof cfConnectingIp === 'string' && isValidIp(cfConnectingIp)) {
