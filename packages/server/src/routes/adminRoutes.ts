@@ -1,9 +1,10 @@
 import { Router } from 'express';
 import { adminController } from '../controllers/adminController.js';
+import { adminUserActivityController } from '../controllers/adminUserActivityController.js';
 import { backupController, backupUpload } from '../controllers/backupController.js';
 import { authenticate, requireRole } from '../middleware/auth.js';
 import { validate } from '../middleware/validate.js';
-import { idParamSchema, updateUserSchema, updateSettingSchema, batchDeleteSchema, batchStatusSchema, batchCategorySchema } from '@m3u8-preview/shared';
+import { idParamSchema, updateUserSchema, updateSettingSchema, batchDeleteSchema, batchStatusSchema, batchCategorySchema, userIdParamSchema } from '@m3u8-preview/shared';
 
 const router = Router();
 
@@ -41,5 +42,13 @@ router.post('/posters/retry', adminController.retryFailedPosters);
 // Backup management
 router.get('/backup/export', backupController.exportBackup);
 router.post('/backup/import', backupUpload, backupController.importBackup);
+
+// User activity (全局聚合)
+router.get('/activity', adminUserActivityController.getActivityAggregate);
+
+// User activity (user detail panel) — 注意顺序：/:userId 在 /activity 之后
+router.get('/users/:userId/login-records', validate(userIdParamSchema, 'params'), adminUserActivityController.getLoginRecords);
+router.get('/users/:userId/watch-history', validate(userIdParamSchema, 'params'), adminUserActivityController.getWatchHistory);
+router.get('/users/:userId/activity-summary', validate(userIdParamSchema, 'params'), adminUserActivityController.getActivitySummary);
 
 export default router;

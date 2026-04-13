@@ -302,3 +302,73 @@ export interface RestoreResult {
 export interface BatchOperationResult {
   affectedCount: number;
 }
+
+// ========== Login Record ==========
+export interface LoginRecord {
+  id: string;
+  userId: string;
+  ip: string | null;
+  userAgent: string | null;
+  browser: string | null;
+  os: string | null;
+  device: string | null;
+  createdAt: string;
+}
+
+// ========== User Activity Summary ==========
+export interface UserActivitySummary {
+  user: {
+    username: string;
+    role: string;
+    isActive: boolean;
+    createdAt: string;
+  } | null;
+  totalLogins: number;
+  lastLogin: {
+    createdAt: string;
+    ip: string | null;
+    browser: string | null;
+    os: string | null;
+    device: string | null;
+  } | null;
+  totalWatched: number;
+  totalCompleted: number;
+}
+
+// ========== User Activity Aggregate (all users) ==========
+export interface UserActivityAggregate {
+  loginStats: {
+    totalLogins: number;
+    uniqueUsers: number;
+    todayLogins: number;
+    yesterdayLogins: number;
+    last7DaysLogins: number;
+  };
+  watchStats: {
+    totalWatchRecords: number;
+    totalCompleted: number;
+    totalWatchTime: number; // seconds
+  };
+  recentLogins: Array<{
+    id: string;
+    userId: string;
+    username: string | null;
+    ip: string | null;
+    browser: string | null;
+    os: string | null;
+    device: string | null;
+    createdAt: string;
+  }>;
+  topWatchedMedia: Array<{
+    mediaId: string;
+    title: string;
+    watchCount: number;
+    completedCount: number;
+  }>;
+  topActiveUsers: Array<{
+    userId: string;
+    username: string;
+    loginCount: number;
+    watchCount: number;
+  }>;
+}

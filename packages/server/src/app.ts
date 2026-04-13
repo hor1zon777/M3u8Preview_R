@@ -32,6 +32,9 @@ const uploadsDir = path.resolve(__dirname, '../uploads');
 
 const app = express();
 
+// Trust first proxy (nginx) so req.ip reflects X-Forwarded-For / X-Real-IP
+app.set('trust proxy', 1);
+
 // Rate limiter for auth routes
 const authLimiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes

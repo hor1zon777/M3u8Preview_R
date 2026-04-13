@@ -188,3 +188,8 @@ export const batchCategorySchema = z.object({
   ids: z.array(z.string().uuid()).min(1, '至少选择一项').max(500, '单次最多操作500项'),
   categoryId: z.string().uuid().nullable(),
 });
+
+// ========== User Activity Param ==========
+export const userIdParamSchema = z.object({
+  userId: z.string().uuid(),
+});

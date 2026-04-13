@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { Link } from 'react-router-dom';
 import { Users, Heart, ListVideo, Clock } from 'lucide-react';
 import { adminApi } from '../services/adminApi.js';
 
@@ -103,6 +104,12 @@ export function AdminUsersPage() {
                       删除
                     </button>
                   )}
+                  <Link
+                    to={`/admin/users/${user.id}`}
+                    className="text-emby-green hover:text-emby-green/80 text-xs ml-2"
+                  >
+                    详情
+                  </Link>
                 </td>
               </tr>
             ))}

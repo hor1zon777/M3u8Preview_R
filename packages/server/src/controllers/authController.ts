@@ -1,5 +1,7 @@
 import { Request, Response, NextFunction } from 'express';
 import { authService } from '../services/authService.js';
+import { loginRecordService } from '../services/loginRecordService.js';
+import { getClientIp } from '../utils/getClientIp.js';
 
 export const authController = {
   async register(req: Request, res: Response, next: NextFunction) {
@@ -26,6 +28,13 @@ export const authController = {
     try {
       const { username, password } = req.body;
       const { refreshToken, ...result } = await authService.login(username, password);
+
+      // 记录登录行为（fire-and-forget，不阻塞登录响应）
+      const ip = getClientIp(req);
+      const userAgent = req.headers['user-agent'] || null;
+      loginRecordService.createRecord(result.user.id, ip, userAgent).catch(err => {
+        console.error('Failed to record login:', err);
+      });
 
       // Set refresh token as httpOnly cookie
       res.cookie('refreshToken', refreshToken, {

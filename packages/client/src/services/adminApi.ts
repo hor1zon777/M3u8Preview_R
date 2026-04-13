@@ -1,5 +1,5 @@
 import api from './api.js';
-import type { ApiResponse, DashboardStats, PaginatedResponse, RestoreResult, BatchOperationResult } from '@m3u8-preview/shared';
+import type { ApiResponse, DashboardStats, PaginatedResponse, RestoreResult, BatchOperationResult, LoginRecord, UserActivitySummary, UserActivityAggregate, WatchHistory } from '@m3u8-preview/shared';
 
 export const adminApi = {
   async getDashboard() {
@@ -114,6 +114,36 @@ export const adminApi = {
 
   async retryFailedPosters(): Promise<{ enqueuedCount: number }> {
     const { data } = await api.post<ApiResponse<{ enqueuedCount: number }>>('/admin/posters/retry');
+    return data.data!;
+  },
+
+  // ─── 用户行为记录 ─────────────────────────────────────
+
+  async getUserLoginRecords(userId: string, page: number = 1, limit: number = 20) {
+    const { data } = await api.get<ApiResponse<PaginatedResponse<LoginRecord>>>(
+      `/admin/users/${userId}/login-records`,
+      { params: { page, limit } },
+    );
+    return data.data!;
+  },
+
+  async getUserWatchHistory(userId: string, page: number = 1, limit: number = 20) {
+    const { data } = await api.get<ApiResponse<PaginatedResponse<WatchHistory>>>(
+      `/admin/users/${userId}/watch-history`,
+      { params: { page, limit } },
+    );
+    return data.data!;
+  },
+
+  async getUserActivitySummary(userId: string) {
+    const { data } = await api.get<ApiResponse<UserActivitySummary>>(
+      `/admin/users/${userId}/activity-summary`,
+    );
+    return data.data!;
+  },
+
+  async getActivityAggregate() {
+    const { data } = await api.get<ApiResponse<UserActivityAggregate>>('/admin/activity');
     return data.data!;
   },
 };

@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
-import { Film, Users, FolderOpen, Play, Settings, Download, Shield } from 'lucide-react';
+import { Film, Users, FolderOpen, Play, Settings, Download, Shield, Activity } from 'lucide-react';
 import { adminApi } from '../services/adminApi.js';
 import { MediaThumbnail } from '../components/media/MediaThumbnail.js';
 import { BackupSection } from '../components/admin/BackupSection.js';
@@ -80,22 +80,41 @@ export function AdminDashboardPage() {
       </div>
 
       {/* Quick Links */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        <Link to="/admin/users" className="bg-emby-bg-card border border-emby-border-subtle rounded-md p-5 hover:border-emby-border-light transition-colors group">
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+        <Link
+          to="/admin/users"
+          className="bg-emby-bg-card border border-emby-border-subtle rounded-md p-5 hover:border-emby-border-light transition-colors group"
+        >
           <div className="flex items-center gap-2">
             <Users className="w-5 h-5 text-emby-text-secondary group-hover:text-emby-green-light" />
             <h3 className="text-white font-semibold group-hover:text-emby-green-light">用户管理</h3>
           </div>
           <p className="text-emby-text-muted text-sm mt-1">管理用户角色和状态</p>
         </Link>
-        <Link to="/admin/media" className="bg-emby-bg-card border border-emby-border-subtle rounded-md p-5 hover:border-emby-border-light transition-colors group">
+        <Link
+          to="/admin/activity"
+          className="bg-emby-bg-card border border-emby-border-subtle rounded-md p-5 hover:border-emby-border-light transition-colors group"
+        >
+          <div className="flex items-center gap-2">
+            <Activity className="w-5 h-5 text-emby-text-secondary group-hover:text-emby-green-light" />
+            <h3 className="text-white font-semibold group-hover:text-emby-green-light">用户行为</h3>
+          </div>
+          <p className="text-emby-text-muted text-sm mt-1">查看登录记录、观看历史</p>
+        </Link>
+        <Link
+          to="/admin/media"
+          className="bg-emby-bg-card border border-emby-border-subtle rounded-md p-5 hover:border-emby-border-light transition-colors group"
+        >
           <div className="flex items-center gap-2">
             <Film className="w-5 h-5 text-emby-text-secondary group-hover:text-emby-green-light" />
             <h3 className="text-white font-semibold group-hover:text-emby-green-light">媒体管理</h3>
           </div>
           <p className="text-emby-text-muted text-sm mt-1">管理所有媒体内容</p>
         </Link>
-        <Link to="/import" className="bg-emby-bg-card border border-emby-border-subtle rounded-md p-5 hover:border-emby-border-light transition-colors group">
+        <Link
+          to="/import"
+          className="bg-emby-bg-card border border-emby-border-subtle rounded-md p-5 hover:border-emby-border-light transition-colors group"
+        >
           <div className="flex items-center gap-2">
             <Download className="w-5 h-5 text-emby-text-secondary group-hover:text-emby-green-light" />
             <h3 className="text-white font-semibold group-hover:text-emby-green-light">批量导入</h3>
@@ -141,7 +160,9 @@ export function AdminDashboardPage() {
           <div className="flex items-center justify-between">
             <div>
               <p className="text-white text-sm">启用网站速率限制</p>
-              <p className="text-emby-text-muted text-xs mt-0.5">关闭后将跳过全局、认证、代理、签名与播放量限流</p>
+              <p className="text-emby-text-muted text-xs mt-0.5">
+                关闭后将跳过全局、认证、代理、签名与播放量限流
+              </p>
             </div>
             <button
               type="button"
@@ -166,9 +187,7 @@ export function AdminDashboardPage() {
             </button>
           </div>
         </div>
-        {settingError && (
-          <p className="text-red-400 text-xs mt-2">{settingError}</p>
-        )}
+        {settingError && <p className="text-red-400 text-xs mt-2">{settingError}</p>}
       </div>
 
       {/* Poster Management */}
@@ -183,7 +202,11 @@ export function AdminDashboardPage() {
           <h3 className="text-white font-semibold mb-4">最近添加</h3>
           <div className="space-y-3">
             {stats.recentMedia.map((media: any) => (
-              <Link key={media.id} to={`/media/${media.id}`} className="flex items-center gap-3 text-sm group">
+              <Link
+                key={media.id}
+                to={`/media/${media.id}`}
+                className="flex items-center gap-3 text-sm group"
+              >
                 <div className="w-16 aspect-video bg-emby-bg-input rounded flex-shrink-0 overflow-hidden">
                   <MediaThumbnail
                     mediaId={media.id}
@@ -207,7 +230,11 @@ export function AdminDashboardPage() {
           <h3 className="text-white font-semibold mb-4">热门内容</h3>
           <div className="space-y-3">
             {stats.topMedia.map((media: any, index: number) => (
-              <Link key={media.id} to={`/media/${media.id}`} className="flex items-center gap-3 text-sm group">
+              <Link
+                key={media.id}
+                to={`/media/${media.id}`}
+                className="flex items-center gap-3 text-sm group"
+              >
                 <span className="text-emby-text-muted font-mono w-6 text-center">{index + 1}</span>
                 <div className="w-16 aspect-video bg-emby-bg-input rounded flex-shrink-0 overflow-hidden">
                   <MediaThumbnail

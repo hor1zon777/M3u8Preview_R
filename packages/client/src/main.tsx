@@ -26,6 +26,8 @@ import { ArtistsPage } from './pages/ArtistsPage.js';
 import { CategoriesPage } from './pages/CategoriesPage.js';
 import { CategoryDetailPage } from './pages/CategoryDetailPage.js';
 import { AdminCategoriesPage } from './pages/AdminCategoriesPage.js';
+import { AdminUserDetailPage } from './pages/AdminUserDetailPage.js';
+import { AdminActivityPage } from './pages/AdminActivityPage.js';
 import './index.css';
 import { clearPendingScrollRestore, getPendingScrollRestore, getSavedRouteScrollPosition, buildRouteKey } from './lib/utils.js';
 
@@ -132,7 +134,9 @@ function AppRoutes() {
         <Route path="/categories" element={<CategoriesPage />} />
         <Route path="/categories/:id" element={<CategoryDetailPage />} />
         <Route path="/admin" element={<ProtectedRoute requireAdmin><AdminDashboardPage /></ProtectedRoute>} />
+        <Route path="/admin/activity" element={<ProtectedRoute requireAdmin><AdminActivityPage /></ProtectedRoute>} />
         <Route path="/admin/users" element={<ProtectedRoute requireAdmin><AdminUsersPage /></ProtectedRoute>} />
+        <Route path="/admin/users/:userId" element={<ProtectedRoute requireAdmin><AdminUserDetailPage /></ProtectedRoute>} />
         <Route path="/admin/media" element={<ProtectedRoute requireAdmin><AdminMediaPage /></ProtectedRoute>} />
         <Route path="/admin/categories" element={<ProtectedRoute requireAdmin><AdminCategoriesPage /></ProtectedRoute>} />
         <Route path="/import" element={<ProtectedRoute requireAdmin><ImportPage /></ProtectedRoute>} />
