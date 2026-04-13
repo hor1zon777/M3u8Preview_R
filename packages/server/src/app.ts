@@ -32,8 +32,9 @@ const uploadsDir = path.resolve(__dirname, '../uploads');
 
 const app = express();
 
-// Trust first proxy (nginx) so req.ip reflects X-Forwarded-For / X-Real-IP
-app.set('trust proxy', 1);
+// Trust proxy chain (nginx + docker network) so req.ip reflects X-Forwarded-For / X-Real-IP
+// 在 Docker 环境中，请求经过 nginx 容器和 docker 网络，需要信任整个代理链
+app.set('trust proxy', true);
 
 // Rate limiter for auth routes
 const authLimiter = rateLimit({
