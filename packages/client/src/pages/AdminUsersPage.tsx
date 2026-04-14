@@ -107,6 +107,7 @@ export function AdminUsersPage() {
                     <td className="px-6 py-4">
                       <div className="relative inline-block">
                         <select
+                          aria-label="用户角色"
                           value={user.role}
                           onChange={e => updateMutation.mutate({ id: user.id, payload: { role: e.target.value } })}
                           disabled={updateMutation.isPending}

@@ -808,7 +808,7 @@ function CategoryCombobox({ inputId, categories, value, onChange }: CategoryComb
           id={inputId}
           ref={inputRef}
           role="combobox"
-          aria-expanded={isOpen}
+          aria-expanded={true}
           aria-controls={listboxId}
           aria-haspopup="listbox"
           aria-activedescendant={activeOptionId}
@@ -828,7 +828,7 @@ function CategoryCombobox({ inputId, categories, value, onChange }: CategoryComb
             ref={triggerRef}
             type="button"
             role="combobox"
-            aria-expanded={isOpen}
+            aria-expanded={false}
             aria-controls={listboxId}
             aria-haspopup="listbox"
             onClick={handleOpen}
@@ -863,7 +863,7 @@ function CategoryCombobox({ inputId, categories, value, onChange }: CategoryComb
           <button
             id={`${inputId}-option-0`}
             role="option"
-            aria-selected={!value}
+            aria-selected={!value ? true : false}
             type="button"
             onClick={() => handleSelect(undefined)}
             className={`w-full px-3 py-2 text-sm text-left flex items-center justify-between transition-colors ${
@@ -880,7 +880,7 @@ function CategoryCombobox({ inputId, categories, value, onChange }: CategoryComb
               id={`${inputId}-option-${i + 1}`}
               key={cat.id}
               role="option"
-              aria-selected={value === cat.id}
+              aria-selected={value === cat.id ? true : false}
               type="button"
               onClick={() => handleSelect(cat.id)}
               className={`w-full px-3 py-2 text-sm text-left flex items-center justify-between transition-colors ${
