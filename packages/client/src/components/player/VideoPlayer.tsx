@@ -1,4 +1,4 @@
-import { useEffect, useRef, useCallback, forwardRef, useImperativeHandle } from 'react';
+import { useEffect, useRef, useCallback, useState, forwardRef, useImperativeHandle } from 'react';
 import Hls from 'hls.js';
 import { usePlayerStore } from '../../stores/playerStore.js';
 import api from '../../services/api.js';
@@ -57,10 +57,12 @@ interface VideoPlayerProps {
   autoPlay?: boolean;
   fillContainer?: boolean;
   controls?: boolean;
+  /** 视频旋转角度（度），仅支持 0 / 90 / 180 / 270；在 fillContainer 模式下生效 */
+  rotation?: 0 | 90 | 180 | 270;
 }
 
 export const VideoPlayer = forwardRef<HTMLVideoElement, VideoPlayerProps>(
-  function VideoPlayer({ media, startTime = 0, onTimeUpdate, autoPlay = false, fillContainer = false, controls = true }, ref) {
+  function VideoPlayer({ media, startTime = 0, onTimeUpdate, autoPlay = false, fillContainer = false, controls = true, rotation = 0 }, ref) {
     const videoRef = useRef<HTMLVideoElement>(null);
     const hlsRef = useRef<Hls | null>(null);
     const containerRef = useRef<HTMLDivElement>(null);
@@ -68,6 +70,7 @@ export const VideoPlayer = forwardRef<HTMLVideoElement, VideoPlayerProps>(
     const mediaRetryRef = useRef(0);
     const proxyAttemptedRef = useRef(false);
     const mountedRef = useRef(true);
+    const [containerSize, setContainerSize] = useState({ width: 0, height: 0 });
     const {
       setPlaying,
       setCurrentTime,
@@ -338,11 +341,39 @@ export const VideoPlayer = forwardRef<HTMLVideoElement, VideoPlayerProps>(
       return () => document.removeEventListener('keydown', handleKeyDown);
     }, [controls]);
 
+    // 监听容器尺寸变化（仅在旋转 + fillContainer 时使用）
+    useEffect(() => {
+      if (!fillContainer) return;
+      const el = containerRef.current;
+      if (!el) return;
+      const update = () => {
+        setContainerSize({ width: el.clientWidth, height: el.clientHeight });
+      };
+      update();
+      const observer = new ResizeObserver(update);
+      observer.observe(el);
+      return () => observer.disconnect();
+    }, [fillContainer]);
+
+    const isRotatedQuarter = rotation === 90 || rotation === 270;
+    const rotatedStyle: React.CSSProperties | undefined = fillContainer && rotation !== 0
+      ? {
+          position: 'absolute',
+          top: '50%',
+          left: '50%',
+          width: isRotatedQuarter ? containerSize.height : containerSize.width,
+          height: isRotatedQuarter ? containerSize.width : containerSize.height,
+          transform: `translate(-50%, -50%) rotate(${rotation}deg)`,
+          transformOrigin: 'center',
+        }
+      : undefined;
+
     return (
       <div ref={containerRef} className={fillContainer ? "relative bg-black w-full h-full overflow-hidden" : "relative bg-black rounded-lg overflow-hidden"}>
         <video
           ref={videoRef}
           className={fillContainer ? "w-full h-full object-contain" : "w-full aspect-video"}
+          style={rotatedStyle}
           controls={controls}
           playsInline
         />

@@ -1,5 +1,5 @@
 import { useState, useRef, useCallback, useEffect, type ChangeEvent, type RefObject } from 'react';
-import { Play, Pause, Maximize, Minimize, Loader2, Volume1, Volume2, VolumeX } from 'lucide-react';
+import { Play, Pause, Maximize, Minimize, Loader2, Volume1, Volume2, VolumeX, RotateCw } from 'lucide-react';
 import { usePlayerStore } from '../../stores/playerStore.js';
 import { formatDuration } from '../../lib/utils.js';
 
@@ -9,9 +9,11 @@ interface PlayerControlsProps {
   videoRef: RefObject<HTMLVideoElement>;
   containerRef: RefObject<HTMLDivElement>;
   onDragStateChange?: (dragging: boolean) => void;
+  rotation?: 0 | 90 | 180 | 270;
+  onRotate?: () => void;
 }
 
-export function PlayerControls({ videoRef, containerRef, onDragStateChange }: PlayerControlsProps) {
+export function PlayerControls({ videoRef, containerRef, onDragStateChange, rotation = 0, onRotate }: PlayerControlsProps) {
   const {
     isPlaying,
     isBuffering,
@@ -311,6 +313,23 @@ export function PlayerControls({ videoRef, containerRef, onDragStateChange }: Pl
 
         {/* 弹性空间 */}
         <div className="flex-1" />
+
+        {/* 旋转按钮 */}
+        {onRotate && (
+          <button
+            onClick={onRotate}
+            className="p-1.5 hover:bg-white/10 rounded-full transition-colors relative"
+            aria-label={`旋转视频（当前 ${rotation}°）`}
+            title={`旋转视频（当前 ${rotation}°）`}
+          >
+            <RotateCw className="w-5 h-5" />
+            {rotation !== 0 && (
+              <span className="absolute -bottom-0.5 -right-0.5 text-[10px] font-semibold bg-emby-green text-white rounded-full px-1 leading-tight">
+                {rotation}°
+              </span>
+            )}
+          </button>
+        )}
 
         {/* 音量控制 */}
         <button

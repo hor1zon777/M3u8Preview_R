@@ -18,6 +18,7 @@ export function PlaybackPage() {
   const location = useLocation();
   const queryClient = useQueryClient();
   const [overlayVisible, setOverlayVisible] = useState(true);
+  const [rotation, setRotation] = useState<0 | 90 | 180 | 270>(0);
   const hideTimerRef = useRef<ReturnType<typeof setTimeout>>();
   const lastPointerTypeRef = useRef<'mouse' | 'touch' | 'pen'>('mouse');
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -221,6 +222,7 @@ export function PlaybackPage() {
           autoPlay
           fillContainer
           controls={false}
+          rotation={rotation}
         />
       ) : (
         <div className="w-full h-full flex items-center justify-center">
@@ -264,7 +266,13 @@ export function PlaybackPage() {
           overlayVisible ? 'opacity-100' : 'opacity-0 pointer-events-none'
         }`}
       >
-        <PlayerControls videoRef={videoRef} containerRef={containerRef} onDragStateChange={handleDragStateChange} />
+        <PlayerControls
+          videoRef={videoRef}
+          containerRef={containerRef}
+          onDragStateChange={handleDragStateChange}
+          rotation={rotation}
+          onRotate={() => setRotation((r) => ((r + 90) % 360) as 0 | 90 | 180 | 270)}
+        />
       </div>
     </div>
   );
