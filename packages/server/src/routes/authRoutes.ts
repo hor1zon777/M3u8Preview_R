@@ -17,10 +17,28 @@ const registerLimiter = rateLimit({
   message: { success: false, error: '注册过于频繁，请稍后再试' },
 });
 
+// H4: 登录单独限速，收紧暴力破解窗口
+const loginLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 10,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { success: false, error: '登录尝试过于频繁，请稍后再试' },
+});
+
+// refresh 单独限速，限制 stolen refresh token 被高频试探
+const refreshLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 20,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { success: false, error: '刷新会话过于频繁，请稍后再试' },
+});
+
 router.post('/register', conditionalRateLimit(registerLimiter), validate(registerSchema), authController.register);
-router.post('/login', validate(loginSchema), authController.login);
+router.post('/login', conditionalRateLimit(loginLimiter), validate(loginSchema), authController.login);
 router.get('/register-status', authController.getRegisterStatus);
-router.post('/refresh', authController.refresh);
+router.post('/refresh', conditionalRateLimit(refreshLimiter), authController.refresh);
 router.post('/logout', authController.logout);
 router.get('/me', authenticate, authController.me);
 router.post('/change-password', authenticate, validate(changePasswordSchema), authController.changePassword);

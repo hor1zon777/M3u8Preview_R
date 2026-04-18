@@ -25,6 +25,16 @@ if (nodeEnv === 'production') {
     console.error('FATAL: PROXY_SECRET must be at least 32 characters and not a known default');
     process.exit(1);
   }
+  if (!process.env.CORS_ORIGIN || process.env.CORS_ORIGIN === '*') {
+    console.error('FATAL: CORS_ORIGIN must be explicitly configured in production and cannot be *');
+    process.exit(1);
+  }
+  try {
+    new URL(process.env.CORS_ORIGIN);
+  } catch {
+    console.error('FATAL: CORS_ORIGIN must be a valid URL');
+    process.exit(1);
+  }
 }
 
 export const config = {

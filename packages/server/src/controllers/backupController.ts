@@ -1,11 +1,19 @@
 import { Request, Response } from 'express';
 import multer from 'multer';
+import fs from 'fs';
+import os from 'os';
 import { backupService } from '../services/backupService.js';
 import { AppError } from '../middleware/errorHandler.js';
 import { asyncHandler } from '../utils/asyncHandler.js';
 
-// 配置 multer 内存存储，限制 500MB，仅接受 .zip 文件
-const storage = multer.memoryStorage();
+// H2: 改用磁盘存储，避免 500MB 文件占满进程内存导致 OOM
+const storage = multer.diskStorage({
+  destination: os.tmpdir(),
+  filename: (_req, file, cb) => {
+    const ext = '.' + (file.originalname.split('.').pop()?.toLowerCase() || 'zip');
+    cb(null, `backup-${Date.now()}${ext === '.zip' ? ext : '.zip'}`);
+  },
+});
 const upload = multer({
   storage,
   limits: { fileSize: 500 * 1024 * 1024 },
@@ -38,7 +46,14 @@ export const backupController = {
       throw new AppError('请上传 ZIP 备份文件', 400);
     }
 
-    const result = await backupService.importBackup(req.file.buffer);
-    res.json({ success: true, data: result });
+    const tmpPath = req.file.path;
+    try {
+      const zipBuffer = fs.readFileSync(tmpPath);
+      const result = await backupService.importBackup(zipBuffer);
+      res.json({ success: true, data: result });
+    } finally {
+      // 无论成功失败都清理临时文件
+      try { fs.unlinkSync(tmpPath); } catch { /* ignore */ }
+    }
   }),
 };

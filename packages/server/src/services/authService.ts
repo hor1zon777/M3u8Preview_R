@@ -13,6 +13,10 @@ function hashToken(token: string): string {
   return crypto.createHash('sha256').update(token).digest('hex');
 }
 
+function createTokenFamilyId(): string {
+  return crypto.randomUUID();
+}
+
 const REFRESH_TOKEN_EXPIRY_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
 
 function generateAccessToken(payload: TokenPayload): string {
@@ -67,6 +71,7 @@ export const authService = {
     await prisma.refreshToken.create({
       data: {
         token: hashToken(refreshToken),
+        familyId: createTokenFamilyId(),
         userId: user.id,
         expiresAt: new Date(Date.now() + REFRESH_TOKEN_EXPIRY_MS),
       },
@@ -102,6 +107,7 @@ export const authService = {
     await prisma.refreshToken.create({
       data: {
         token: hashToken(refreshToken),
+        familyId: createTokenFamilyId(),
         userId: user.id,
         expiresAt: new Date(Date.now() + REFRESH_TOKEN_EXPIRY_MS),
       },
@@ -126,10 +132,18 @@ export const authService = {
     // Check if hashed token exists in DB
     const tokenHash = hashToken(token);
     const storedToken = await prisma.refreshToken.findUnique({ where: { token: tokenHash } });
-    if (!storedToken || storedToken.expiresAt < new Date()) {
-      if (storedToken) {
-        await prisma.refreshToken.delete({ where: { id: storedToken.id } });
-      }
+
+    if (!storedToken) {
+      // M3: 重放检测 — token 不在 DB 中，可能是已被轮换消费过的旧 token
+      // 攻击者可能窃取了旧 token 并在合法用户之后使用
+      // 安全策略：删除该用户所有同 family 的 token，强制重新登录
+      console.warn('[auth] refresh token reuse detected', { userId: payload.userId });
+      await prisma.refreshToken.deleteMany({ where: { userId: payload.userId } });
+      throw new AppError('Refresh token reuse detected, all sessions revoked', 401);
+    }
+
+    if (storedToken.expiresAt < new Date()) {
+      await prisma.refreshToken.delete({ where: { id: storedToken.id } });
       throw new AppError('Refresh token expired', 401);
     }
 
@@ -139,7 +153,7 @@ export const authService = {
       throw new AppError('User not found or inactive', 401);
     }
 
-    // Rotate refresh token
+    // Rotate refresh token: delete old, create new with same familyId
     await prisma.refreshToken.delete({ where: { id: storedToken.id } });
 
     const newPayload: TokenPayload = { userId: user.id, role: user.role as UserRole };
@@ -149,6 +163,7 @@ export const authService = {
     await prisma.refreshToken.create({
       data: {
         token: hashToken(newRefreshToken),
+        familyId: storedToken.familyId,
         userId: user.id,
         expiresAt: new Date(Date.now() + REFRESH_TOKEN_EXPIRY_MS),
       },

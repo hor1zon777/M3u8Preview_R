@@ -30,6 +30,7 @@ model User {
 model RefreshToken {
   id        String   @id @default(uuid())
   token     String   @unique
+  familyId  String
   userId    String
   expiresAt DateTime
   createdAt DateTime @default(now())
@@ -37,6 +38,7 @@ model RefreshToken {
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId])
+  @@index([familyId])
   @@map("refresh_tokens")
 }
 

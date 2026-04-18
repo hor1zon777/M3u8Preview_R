@@ -82,7 +82,12 @@ export const authController = {
         await authService.logout(token);
       }
 
-      res.clearCookie('refreshToken', { path: '/api/v1/auth' });
+      res.clearCookie('refreshToken', {
+        path: '/api/v1/auth',
+        httpOnly: true,
+        secure: process.env.NODE_ENV === 'production',
+        sameSite: 'lax',
+      });
       res.json({ success: true, message: 'Logged out successfully' });
     } catch (error) {
       next(error);
@@ -113,7 +118,12 @@ export const authController = {
       await authService.changePassword(req.user!.userId, oldPassword, newPassword);
 
       // 清除当前设备的 refreshToken cookie
-      res.clearCookie('refreshToken', { path: '/api/v1/auth' });
+      res.clearCookie('refreshToken', {
+        path: '/api/v1/auth',
+        httpOnly: true,
+        secure: process.env.NODE_ENV === 'production',
+        sameSite: 'lax',
+      });
 
       res.json({ success: true, message: '密码修改成功，请重新登录' });
     } catch (error) {

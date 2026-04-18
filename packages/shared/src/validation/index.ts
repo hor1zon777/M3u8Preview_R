@@ -3,7 +3,7 @@ import { z } from 'zod';
 // ========== Auth Validation ==========
 export const loginSchema = z.object({
   username: z.string().min(3, '用户名至少3个字符').max(50),
-  password: z.string().min(1, '请输入密码').max(100),
+  password: z.string().min(1, '请输入密码').max(72),
 });
 
 export const registerSchema = z.object({
@@ -14,7 +14,7 @@ export const registerSchema = z.object({
     .regex(/^[a-zA-Z0-9_]+$/, '用户名只能包含字母、数字和下划线'),
   password: z.string()
     .min(8, '密码至少8个字符')
-    .max(100)
+    .max(72)
     .regex(/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d).{8,}$/, '密码须包含大写字母、小写字母和数字'),
 });
 
@@ -169,7 +169,7 @@ export const changePasswordSchema = z.object({
   oldPassword: z.string().min(1, '请输入旧密码'),
   newPassword: z.string()
     .min(8, '密码至少8个字符')
-    .max(100)
+    .max(72)
     .regex(/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d).{8,}$/, '密码须包含大写字母、小写字母和数字'),
 }).refine(data => data.oldPassword !== data.newPassword, {
   message: '新密码不能与旧密码相同',

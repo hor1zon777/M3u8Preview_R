@@ -48,10 +48,12 @@ interface CacheEntry<T> {
 class TtlCache<T> {
   private readonly store = new Map<string, CacheEntry<T>>();
   private readonly ttlMs: number;
+  private readonly maxEntries: number;
   private readonly cleanupTimer: ReturnType<typeof setInterval>;
 
-  constructor(ttlMs: number, cleanupIntervalMs?: number) {
+  constructor(ttlMs: number, maxEntries: number = 10_000, cleanupIntervalMs?: number) {
     this.ttlMs = ttlMs;
+    this.maxEntries = maxEntries;
     // 默认每 10 分钟清理一次过期条目
     this.cleanupTimer = setInterval(() => this.cleanup(), cleanupIntervalMs ?? 600_000);
     // 不阻止进程退出
@@ -69,6 +71,11 @@ class TtlCache<T> {
   }
 
   set(key: string, value: T): void {
+    // 超过上限时淘汰最早插入的条目（Map 保持插入顺序）
+    if (this.store.size >= this.maxEntries) {
+      const firstKey = this.store.keys().next().value;
+      if (firstKey !== undefined) this.store.delete(firstKey);
+    }
     this.store.set(key, { value, expiresAt: Date.now() + this.ttlMs });
   }
 

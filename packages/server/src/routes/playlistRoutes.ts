@@ -29,8 +29,8 @@ router.get('/:id/items', optionalAuth, validate(idParamSchema, 'params'), valida
 router.get('/', authenticate, playlistController.findAll);
 router.get('/:id', authenticate, validate(idParamSchema, 'params'), playlistController.findById);
 router.post('/', authenticate, requireRole('ADMIN'), validate(playlistCreateSchema), playlistController.create);
-router.put('/:id', authenticate, validate(idParamSchema, 'params'), validate(playlistUpdateSchema), playlistController.update);
-router.delete('/:id', authenticate, validate(idParamSchema, 'params'), playlistController.delete);
+router.put('/:id', authenticate, requireRole('ADMIN'), validate(idParamSchema, 'params'), validate(playlistUpdateSchema), playlistController.update);
+router.delete('/:id', authenticate, requireRole('ADMIN'), validate(idParamSchema, 'params'), playlistController.delete);
 router.post('/:id/items', authenticate, validate(idParamSchema, 'params'), validate(addItemBodySchema), playlistController.addItem);
 router.delete('/:id/items/:mediaId', authenticate, validate(mediaIdParamSchema, 'params'), playlistController.removeItem);
 router.put('/:id/reorder', authenticate, validate(idParamSchema, 'params'), validate(reorderBodySchema), playlistController.reorderItems);

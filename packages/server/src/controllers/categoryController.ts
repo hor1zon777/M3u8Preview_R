@@ -7,10 +7,14 @@ export const categoryController = {
   async findAll(req: Request, res: Response, next: NextFunction) {
     try {
       const { search, sortBy, sortOrder } = req.query;
+      // H3: sortBy 白名单验证
+      const allowedSortBy = ['name', 'createdAt', 'updatedAt', 'mediaCount'] as const;
+      const safeSortBy = allowedSortBy.includes(sortBy as any) ? (sortBy as typeof allowedSortBy[number]) : 'name';
+      const safeSortOrder = sortOrder === 'desc' ? 'desc' as const : 'asc' as const;
       const categories = await categoryService.findAll({
         search: search as string,
-        sortBy: sortBy as any,
-        sortOrder: sortOrder as any,
+        sortBy: safeSortBy,
+        sortOrder: safeSortOrder,
       });
       res.json({ success: true, data: categories });
     } catch (error) {

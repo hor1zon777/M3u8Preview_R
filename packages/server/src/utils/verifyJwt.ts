@@ -27,7 +27,7 @@ export function verifyJwt<T = unknown>(token: string, purpose: JwtPurpose): T {
   } else if (config.jwt.kidPrev && kid === config.jwt.kidPrev && prev) {
     secret = prev;
   } else {
-    throw new jwt.JsonWebTokenError(`unknown kid: ${kid}`);
+    throw new jwt.JsonWebTokenError('unknown kid');
   }
 
   return jwt.verify(token, secret, { algorithms: ['HS256'] }) as T;

@@ -48,8 +48,12 @@ export function optionalAuth(req: Request, _res: Response, next: NextFunction) {
       req.user = decoded as TokenPayload;
     }
     next();
-  } catch {
-    // Token invalid, but this is optional auth, so continue without user
+  } catch (error) {
+    console.warn('[auth] ignored invalid optional token', {
+      path: req.path,
+      method: req.method,
+      reason: error instanceof Error ? error.name : 'unknown',
+    });
     next();
   }
 }

@@ -27,7 +27,7 @@ export function errorHandler(err: Error, _req: Request, res: Response, _next: Ne
   const eventId = crypto.randomUUID();
   if (config.nodeEnv === 'production') {
     // 仅输出定位信息，不含 stack
-    console.error(`[error] eventId=${eventId} name=${err.name} message=${err.message}`);
+    console.error(`[error] eventId=${eventId} name=${err.name}`);
   } else {
     console.error(`[error] eventId=${eventId} unexpected error:`, err);
   }

@@ -87,10 +87,13 @@ export const playlistController = {
         parseInt(req.query.limit as string) || 20,
       );
       const { search, sortBy, sortOrder } = req.query;
+      const allowedSortBy = ['updatedAt', 'createdAt', 'name', 'itemCount'] as const;
+      const safeSortBy = allowedSortBy.includes(sortBy as any) ? (sortBy as typeof allowedSortBy[number]) : 'updatedAt';
+      const safeSortOrder = sortOrder === 'asc' ? 'asc' as const : 'desc' as const;
       const result = await playlistService.getPublicPlaylists(page, limit, {
         search: search as string,
-        sortBy: sortBy as string,
-        sortOrder: sortOrder as any,
+        sortBy: safeSortBy,
+        sortOrder: safeSortOrder,
       });
       res.json({ success: true, data: result });
     } catch (error) {

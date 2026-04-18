@@ -173,9 +173,21 @@ export const backupService = {
 
     const tables = backupData.tables;
 
-    // 每个表的字段白名单：只接受已知列，抵御注入额外字段（攻击扩面或适配新 schema）
+    // ── 字段白名单工具 ──
+    // 每个表只接受已知列，抵御注入额外字段（攻击扩面或适配新 schema）
     const USER_FIELDS = ['id', 'username', 'passwordHash', 'role', 'avatar', 'isActive', 'createdAt', 'updatedAt'] as const;
+    const CATEGORY_FIELDS = ['id', 'name', 'slug', 'posterUrl', 'createdAt', 'updatedAt'] as const;
+    const TAG_FIELDS = ['id', 'name', 'createdAt', 'updatedAt'] as const;
+    const MEDIA_FIELDS = ['id', 'title', 'm3u8Url', 'posterUrl', 'description', 'year', 'rating', 'duration', 'artist', 'views', 'status', 'categoryId', 'createdAt', 'updatedAt'] as const;
+    const MEDIA_TAG_FIELDS = ['mediaId', 'tagId'] as const;
+    const FAVORITE_FIELDS = ['id', 'userId', 'mediaId', 'createdAt'] as const;
+    const PLAYLIST_FIELDS = ['id', 'name', 'description', 'posterUrl', 'userId', 'isPublic', 'createdAt', 'updatedAt'] as const;
+    const PLAYLIST_ITEM_FIELDS = ['id', 'playlistId', 'mediaId', 'position', 'createdAt'] as const;
+    const WATCH_HISTORY_FIELDS = ['id', 'userId', 'mediaId', 'progress', 'duration', 'percentage', 'completed', 'createdAt', 'updatedAt'] as const;
+    const IMPORT_LOG_FIELDS = ['id', 'userId', 'format', 'fileName', 'totalCount', 'successCount', 'failedCount', 'status', 'errors', 'createdAt'] as const;
+    const SYSTEM_SETTING_FIELDS = ['key', 'value', 'updatedAt'] as const;
     const ALLOWED_ROLES = new Set(['USER', 'ADMIN']);
+    const ALLOWED_SETTING_KEYS = new Set(['siteName', 'allowRegistration', 'enableRateLimit']);
 
     function pickFields<T extends Record<string, unknown>>(row: unknown, fields: readonly string[]): Partial<T> {
       if (!row || typeof row !== 'object') return {};
@@ -186,6 +198,10 @@ export const backupService = {
         }
       }
       return out as Partial<T>;
+    }
+
+    function sanitizeRows(rows: unknown[], fields: readonly string[]): Record<string, unknown>[] {
+      return rows.map((r) => pickFields(r, fields));
     }
 
     // users：白名单 + role 值校验 + 强制类型，防止注入未知字段、非法 role
@@ -202,6 +218,27 @@ export const backupService = {
       }
       return picked;
     });
+
+    // media：白名单 + m3u8Url 协议校验（防止通过备份恢复注入内网 URL 绕过代理 SSRF 防护）
+    const sanitizedMedia = tables.media.map((m: unknown) => {
+      const picked = pickFields<{ m3u8Url: string; title: string }>(m, MEDIA_FIELDS);
+      if (typeof picked.m3u8Url === 'string' && !/^https?:\/\//i.test(picked.m3u8Url)) {
+        throw new AppError('media 表存在非法 m3u8Url（仅允许 HTTP/HTTPS）', 400);
+      }
+      return picked;
+    });
+
+    const sanitizedCategories = sanitizeRows(tables.categories, CATEGORY_FIELDS);
+    const sanitizedTags = sanitizeRows(tables.tags, TAG_FIELDS);
+    const sanitizedMediaTags = sanitizeRows(tables.mediaTags, MEDIA_TAG_FIELDS);
+    const sanitizedFavorites = sanitizeRows(tables.favorites, FAVORITE_FIELDS);
+    const sanitizedPlaylists = sanitizeRows(tables.playlists, PLAYLIST_FIELDS);
+    const sanitizedPlaylistItems = sanitizeRows(tables.playlistItems, PLAYLIST_ITEM_FIELDS);
+    const sanitizedWatchHistory = sanitizeRows(tables.watchHistory, WATCH_HISTORY_FIELDS);
+    const sanitizedImportLogs = sanitizeRows(tables.importLogs, IMPORT_LOG_FIELDS);
+    const sanitizedSystemSettings = tables.systemSettings
+      .map((s: unknown) => pickFields<{ key: string; value: string }>(s, SYSTEM_SETTING_FIELDS))
+      .filter((s: Record<string, unknown>) => typeof s.key === 'string' && ALLOWED_SETTING_KEYS.has(s.key as string));
 
     let totalRecords = 0;
 
@@ -227,61 +264,61 @@ export const backupService = {
         totalRecords += sanitizedUsers.length;
       }
 
-      if (tables.categories.length > 0) {
-        await tx.category.createMany({ data: tables.categories });
-        totalRecords += tables.categories.length;
+      if (sanitizedCategories.length > 0) {
+        await tx.category.createMany({ data: sanitizedCategories as never });
+        totalRecords += sanitizedCategories.length;
       }
 
-      if (tables.tags.length > 0) {
-        await tx.tag.createMany({ data: tables.tags });
-        totalRecords += tables.tags.length;
+      if (sanitizedTags.length > 0) {
+        await tx.tag.createMany({ data: sanitizedTags as never });
+        totalRecords += sanitizedTags.length;
       }
 
-      if (tables.media.length > 0) {
-        await tx.media.createMany({ data: tables.media });
-        totalRecords += tables.media.length;
+      if (sanitizedMedia.length > 0) {
+        await tx.media.createMany({ data: sanitizedMedia as never });
+        totalRecords += sanitizedMedia.length;
       }
 
-      if (tables.mediaTags.length > 0) {
-        await tx.mediaTag.createMany({ data: tables.mediaTags });
-        totalRecords += tables.mediaTags.length;
+      if (sanitizedMediaTags.length > 0) {
+        await tx.mediaTag.createMany({ data: sanitizedMediaTags as never });
+        totalRecords += sanitizedMediaTags.length;
       }
 
-      if (tables.favorites.length > 0) {
-        await tx.favorite.createMany({ data: tables.favorites });
-        totalRecords += tables.favorites.length;
+      if (sanitizedFavorites.length > 0) {
+        await tx.favorite.createMany({ data: sanitizedFavorites as never });
+        totalRecords += sanitizedFavorites.length;
       }
 
-      if (tables.playlists.length > 0) {
-        await tx.playlist.createMany({ data: tables.playlists });
-        totalRecords += tables.playlists.length;
+      if (sanitizedPlaylists.length > 0) {
+        await tx.playlist.createMany({ data: sanitizedPlaylists as never });
+        totalRecords += sanitizedPlaylists.length;
       }
 
-      if (tables.playlistItems.length > 0) {
-        await tx.playlistItem.createMany({ data: tables.playlistItems });
-        totalRecords += tables.playlistItems.length;
+      if (sanitizedPlaylistItems.length > 0) {
+        await tx.playlistItem.createMany({ data: sanitizedPlaylistItems as never });
+        totalRecords += sanitizedPlaylistItems.length;
       }
 
-      if (tables.watchHistory.length > 0) {
-        await tx.watchHistory.createMany({ data: tables.watchHistory });
-        totalRecords += tables.watchHistory.length;
+      if (sanitizedWatchHistory.length > 0) {
+        await tx.watchHistory.createMany({ data: sanitizedWatchHistory as never });
+        totalRecords += sanitizedWatchHistory.length;
       }
 
-      if (tables.importLogs.length > 0) {
-        await tx.importLog.createMany({ data: tables.importLogs });
-        totalRecords += tables.importLogs.length;
+      if (sanitizedImportLogs.length > 0) {
+        await tx.importLog.createMany({ data: sanitizedImportLogs as never });
+        totalRecords += sanitizedImportLogs.length;
       }
 
       // systemSettings 使用 upsert（主键为 key 字符串）
-      for (const setting of tables.systemSettings) {
+      for (const setting of sanitizedSystemSettings) {
         if (setting.key === 'enableRateLimit') {
           continue;
         }
 
         await tx.systemSetting.upsert({
-          where: { key: setting.key },
-          update: { value: setting.value },
-          create: { key: setting.key, value: setting.value },
+          where: { key: setting.key as string },
+          update: { value: setting.value as string },
+          create: { key: setting.key as string, value: setting.value as string },
         });
         totalRecords++;
       }

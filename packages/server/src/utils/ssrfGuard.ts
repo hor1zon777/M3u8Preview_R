@@ -26,6 +26,26 @@ function isPrivateIp(ip: string): boolean {
   return false;
 }
 
+function isPrivateIpv6(ip: string): boolean {
+  const clean = ip.replace(/^\[|\]$/g, '').toLowerCase();
+  if (clean === '::1' || clean === '0:0:0:0:0:0:0:1') return true;
+  if (clean === '::' || clean === '0:0:0:0:0:0:0:0') return true;
+  if (clean.startsWith('fe80:') || clean.startsWith('fe90:') || clean.startsWith('fea0:') || clean.startsWith('feb0:')) return true;
+  if (clean.startsWith('fc') || clean.startsWith('fd')) return true;
+  if (clean.startsWith('100:') || clean.startsWith('0100:')) return true;
+  if (clean.startsWith('2001:db8:') || clean.startsWith('2001:0db8:')) return true;
+  if (clean.startsWith('2002:')) return true;
+  if (clean.startsWith('2001:0:') || clean.startsWith('2001:0000:')) return true;
+
+  const v4Match = clean.match(/^::ffff:(\d+\.\d+\.\d+\.\d+)$/i);
+  if (v4Match && isPrivateIp(v4Match[1])) return true;
+
+  const v4Compat = clean.match(/^::(\d+\.\d+\.\d+\.\d+)$/);
+  if (v4Compat && isPrivateIp(v4Compat[1])) return true;
+
+  return false;
+}
+
 export function isPrivateHostname(hostname: string): boolean {
   const clean = hostname.replace(/^\[|\]$/g, '').toLowerCase();
 
@@ -43,12 +63,7 @@ export function isPrivateHostname(hostname: string): boolean {
     return true;
   }
 
-  if (isPrivateIp(clean)) {
-    return true;
-  }
-
-  const v4MappedMatch = clean.match(/^::ffff:(\d+\.\d+\.\d+\.\d+)$/i);
-  if (v4MappedMatch && isPrivateIp(v4MappedMatch[1])) {
+  if (isPrivateIp(clean) || isPrivateIpv6(clean)) {
     return true;
   }
 
@@ -74,17 +89,7 @@ export async function validateResolvedIp(hostname: string): Promise<void> {
   try {
     const addresses = await dns.resolve6(hostname);
     for (const addr of addresses) {
-      const clean = addr.replace(/^\[|\]$/g, '').toLowerCase();
-      if (
-        clean === '::1' ||
-        clean.startsWith('fe80:') ||
-        clean.startsWith('fc') ||
-        clean.startsWith('fd')
-      ) {
-        throw new AppError('不允许访问内网地址', 403);
-      }
-      const v4Match = clean.match(/^::ffff:(\d+\.\d+\.\d+\.\d+)$/i);
-      if (v4Match && isPrivateIp(v4Match[1])) {
+      if (isPrivateIpv6(addr)) {
         throw new AppError('不允许访问内网地址', 403);
       }
     }
