@@ -174,6 +174,11 @@ async function main() {
     update: {},
     create: { key: 'enableRateLimit', value: 'true' },
   });
+  await prisma.systemSetting.upsert({
+    where: { key: 'proxyAllowedExtensions' },
+    update: {},
+    create: { key: 'proxyAllowedExtensions', value: '.m3u8,.ts,.m4s,.mp4,.aac,.key,.jpg,.jpeg,.png,.webp' },
+  });
   console.log('System settings created');
 
   console.log('Seed completed!');

@@ -3,6 +3,7 @@ import { config } from './config.js';
 import { prisma } from './lib/prisma.js';
 import { checkFfmpeg } from './services/thumbnailService.js';
 import { migrateExternalPosters } from './services/posterDownloadService.js';
+import { ensureDefaultSettings } from './services/settingsMigration.js';
 import type { Server } from 'http';
 
 let server: Server;
@@ -11,6 +12,9 @@ async function main() {
   // Test database connection
   await prisma.$connect();
   console.log('Database connected');
+
+  // 数据库设置项迁移：补全新版本新增的默认设置
+  await ensureDefaultSettings();
 
   // Check ffmpeg availability for thumbnail generation
   await checkFfmpeg();

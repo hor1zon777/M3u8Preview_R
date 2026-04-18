@@ -133,7 +133,7 @@ export const updateUserSchema = z.object({
   message: 'At least one of role or isActive must be provided',
 });
 
-const systemSettingKeySchema = z.enum(['siteName', 'allowRegistration', 'enableRateLimit']);
+const systemSettingKeySchema = z.enum(['siteName', 'allowRegistration', 'enableRateLimit', 'proxyAllowedExtensions']);
 
 export const updateSettingSchema = z.object({
   key: systemSettingKeySchema,
@@ -153,6 +153,20 @@ export const updateSettingSchema = z.object({
       path: ['value'],
       message: 'Value cannot be empty',
     });
+  }
+
+  if (key === 'proxyAllowedExtensions') {
+    const exts = value.split(',').map(s => s.trim()).filter(Boolean);
+    if (exts.length === 0) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['value'], message: '至少需要一个扩展名' });
+      return;
+    }
+    for (const ext of exts) {
+      if (!/^\.[a-zA-Z0-9]+$/.test(ext)) {
+        ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['value'], message: `扩展名格式无效: ${ext}，需以 . 开头` });
+        return;
+      }
+    }
   }
 });
 

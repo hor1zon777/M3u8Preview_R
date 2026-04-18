@@ -100,10 +100,36 @@ const mediaUrlCache = new TtlCache<true>(10 * 60 * 1000);
 
 // ==================== 安全校验 ====================
 
-/** 允许代理的文件扩展名白名单（视频/HLS 相关；去掉图片类型，缩小 SSRF/代理滥用面） */
-const ALLOWED_EXTENSIONS = new Set([
-  '.m3u8', '.ts', '.m4s', '.mp4', '.aac', '.key',
-]);
+/** 允许代理的文件扩展名默认白名单 */
+const DEFAULT_ALLOWED_EXTENSIONS = '.m3u8,.ts,.m4s,.mp4,.aac,.key,.jpg,.jpeg,.png,.webp';
+
+let cachedAllowedExtensions: Set<string> | null = null;
+let extensionsCacheExpiresAt = 0;
+const EXTENSIONS_CACHE_TTL_MS = 30_000;
+
+async function getAllowedExtensions(): Promise<Set<string>> {
+  const now = Date.now();
+  if (cachedAllowedExtensions && now < extensionsCacheExpiresAt) {
+    return cachedAllowedExtensions;
+  }
+  try {
+    const setting = await prisma.systemSetting.findUnique({
+      where: { key: 'proxyAllowedExtensions' },
+      select: { value: true },
+    });
+    const raw = setting?.value || DEFAULT_ALLOWED_EXTENSIONS;
+    cachedAllowedExtensions = new Set(raw.split(',').map(s => s.trim().toLowerCase()).filter(Boolean));
+  } catch {
+    cachedAllowedExtensions = new Set(DEFAULT_ALLOWED_EXTENSIONS.split(',').map(s => s.trim()));
+  }
+  extensionsCacheExpiresAt = Date.now() + EXTENSIONS_CACHE_TTL_MS;
+  return cachedAllowedExtensions;
+}
+
+export function invalidateProxyExtensionsCache(): void {
+  cachedAllowedExtensions = null;
+  extensionsCacheExpiresAt = 0;
+}
 
 /** 提取路径最后一段的文件扩展名 */
 function getPathExtension(pathname: string): string {
@@ -140,7 +166,8 @@ async function validateProxyUrl(rawUrl: string): Promise<URL> {
   await validateResolvedIpCached(parsed.hostname);
 
   const ext = getPathExtension(parsed.pathname);
-  if (!ext || !ALLOWED_EXTENSIONS.has(ext)) {
+  const allowed = await getAllowedExtensions();
+  if (!ext || !allowed.has(ext)) {
     throw new AppError('不支持代理此类型的资源', 400);
   }
 

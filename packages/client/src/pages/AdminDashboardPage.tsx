@@ -1,7 +1,7 @@
-import { useState } from 'react';
+import { useState, useCallback } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
-import { Film, Users, FolderOpen, Play, Settings, Download, Shield, Activity } from 'lucide-react';
+import { Film, Users, FolderOpen, Play, Settings, Download, Shield, Activity, X, Plus } from 'lucide-react';
 import { adminApi } from '../services/adminApi.js';
 import { MediaThumbnail } from '../components/media/MediaThumbnail.js';
 import { BackupSection } from '../components/admin/BackupSection.js';
@@ -33,9 +33,45 @@ export function AdminDashboardPage() {
   });
 
   const [settingError, setSettingError] = useState('');
+  const [newExt, setNewExt] = useState('');
   const settingsLoaded = !!settings;
   const allowRegistration = settings?.find((s) => s.key === 'allowRegistration')?.value !== 'false';
   const enableRateLimit = settings?.find((s) => s.key === 'enableRateLimit')?.value !== 'false';
+  const DEFAULT_PROXY_EXTENSIONS = '.m3u8,.ts,.m4s,.mp4,.aac,.key,.jpg,.jpeg,.png,.webp';
+  const DEFAULT_EXTENSIONS = new Set(DEFAULT_PROXY_EXTENSIONS.split(','));
+  const proxyAllowedExtensions = settings?.find((s) => s.key === 'proxyAllowedExtensions')?.value || DEFAULT_PROXY_EXTENSIONS;
+  const extensionTags = proxyAllowedExtensions.split(',').map(s => s.trim()).filter(Boolean);
+
+  const saveExtensions = useCallback((tags: string[]) => {
+    updateSettingMutation.mutate({ key: 'proxyAllowedExtensions', value: tags.join(',') });
+  }, [updateSettingMutation]);
+
+  const handleAddExt = useCallback(() => {
+    let ext = newExt.trim().toLowerCase();
+    if (!ext) return;
+    if (!ext.startsWith('.')) ext = `.${ext}`;
+    if (!/^\.[a-zA-Z0-9]+$/.test(ext)) {
+      setSettingError('扩展名格式无效，需以 . 开头且仅含字母数字');
+      setTimeout(() => setSettingError(''), 3000);
+      return;
+    }
+    if (extensionTags.includes(ext)) {
+      setNewExt('');
+      return;
+    }
+    saveExtensions([...extensionTags, ext]);
+    setNewExt('');
+  }, [newExt, extensionTags, saveExtensions]);
+
+  const handleRemoveExt = useCallback((ext: string) => {
+    const remaining = extensionTags.filter(t => t !== ext);
+    if (remaining.length === 0) {
+      setSettingError('至少需要保留一个扩展名');
+      setTimeout(() => setSettingError(''), 3000);
+      return;
+    }
+    saveExtensions(remaining);
+  }, [extensionTags, saveExtensions]);
 
   if (isLoading) {
     return (
@@ -185,6 +221,67 @@ export function AdminDashboardPage() {
                 }`}
               />
             </button>
+          </div>
+          <div>
+            <div className="mb-3">
+              <p className="text-white text-sm">代理允许的文件扩展名</p>
+              <p className="text-emby-text-muted text-xs mt-0.5">
+                控制代理端点可转发的资源类型，点击标签上的 × 可移除
+              </p>
+            </div>
+            <div className="flex flex-wrap gap-1.5 mb-3">
+              {extensionTags.length === 0 ? (
+                <span className="text-emby-text-muted text-xs italic">暂无配置，代理将拒绝所有资源</span>
+              ) : (
+                extensionTags.map(ext => {
+                  const isDefault = DEFAULT_EXTENSIONS.has(ext);
+                  return (
+                    <span
+                      key={ext}
+                      className={`inline-flex items-center gap-1 px-2 py-0.5 rounded border text-xs ${
+                        isDefault
+                          ? 'bg-emby-bg-input border-emby-border-subtle text-emby-text-secondary'
+                          : 'bg-blue-500/10 border-blue-500/30 text-blue-400'
+                      }`}
+                    >
+                      {ext}
+                      {isDefault && (
+                        <span className="text-emby-text-muted text-[10px]">默认</span>
+                      )}
+                      <button
+                        type="button"
+                        disabled={updateSettingMutation.isPending}
+                        onClick={() => handleRemoveExt(ext)}
+                        className="text-emby-text-muted hover:text-red-400 transition-colors disabled:opacity-50"
+                        aria-label={`移除 ${ext}`}
+                      >
+                        <X className="w-3 h-3" />
+                      </button>
+                    </span>
+                  );
+                })
+              )}
+            </div>
+            <div className="flex gap-2">
+              <input
+                type="text"
+                value={newExt}
+                onChange={(e) => setNewExt(e.target.value)}
+                onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); handleAddExt(); } }}
+                disabled={updateSettingMutation.isPending || !settingsLoaded}
+                className="w-36 bg-emby-bg-input border border-emby-border-subtle rounded px-3 py-1.5 text-white text-sm focus:outline-none focus:ring-1 focus:ring-emby-green disabled:opacity-50"
+                placeholder="输入扩展名，如 .gif"
+              />
+              <button
+                type="button"
+                disabled={updateSettingMutation.isPending || !settingsLoaded || !newExt.trim()}
+                onClick={handleAddExt}
+                className="inline-flex items-center gap-1 px-3 py-1.5 bg-emby-green text-white text-sm rounded hover:bg-emby-green/90 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                <Plus className="w-3.5 h-3.5" />
+                添加
+              </button>
+            </div>
           </div>
         </div>
         {settingError && <p className="text-red-400 text-xs mt-2">{settingError}</p>}

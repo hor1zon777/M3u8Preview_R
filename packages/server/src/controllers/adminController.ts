@@ -5,6 +5,7 @@ import { safePagination } from '../utils/pagination.js';
 import { generateAllMissing, thumbnailQueue } from '../services/thumbnailService.js';
 import { migrateExternalPosters, posterMigrationQueue, getPosterStats } from '../services/posterDownloadService.js';
 import { invalidateRateLimitSettingCache } from '../middleware/conditionalRateLimit.js';
+import { invalidateProxyExtensionsCache } from '../routes/proxyRoutes.js';
 
 type Params = { id: string };
 
@@ -67,6 +68,10 @@ export const adminController = {
 
     if (key === 'enableRateLimit') {
       invalidateRateLimitSettingCache();
+    }
+
+    if (key === 'proxyAllowedExtensions') {
+      invalidateProxyExtensionsCache();
     }
 
     res.json({ success: true, data: setting });
