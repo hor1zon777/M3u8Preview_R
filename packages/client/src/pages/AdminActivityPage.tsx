@@ -2,7 +2,7 @@ import { useQuery } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
 import {
   LogIn, Eye, Monitor, Smartphone, Tablet, Clock,
-  TrendingUp, Film, Users, CheckCircle2,
+  TrendingUp, Film, Users, CheckCircle2, Play,
 } from 'lucide-react';
 import { adminApi } from '../services/adminApi.js';
 
@@ -68,7 +68,7 @@ export function AdminActivityPage() {
     );
   }
 
-  const { loginStats, watchStats, recentLogins, topWatchedMedia, topActiveUsers } = data;
+  const { loginStats, watchStats, recentLogins, topWatchedMedia, topActiveUsers, recentWatchRecords } = data;
 
   return (
     <div className="space-y-8">
@@ -197,6 +197,89 @@ export function AdminActivityPage() {
             </div>
           )}
         </div>
+      </div>
+
+      {/* 最近播放记录 */}
+      <div className="bg-emby-bg-card border border-emby-border-subtle rounded-lg overflow-x-auto">
+        <div className="p-5 border-b border-emby-border-subtle">
+          <h3 className="text-white font-semibold flex items-center gap-2">
+            <Play className="w-4 h-4 text-emby-text-muted" />
+            最近播放记录
+          </h3>
+        </div>
+        {recentWatchRecords.length === 0 ? (
+          <div className="p-8 text-center text-emby-text-muted text-sm">暂无数据</div>
+        ) : (
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="border-b border-emby-border-subtle">
+                <th className="px-5 py-3 text-left text-emby-text-secondary font-medium">用户</th>
+                <th className="px-5 py-3 text-left text-emby-text-secondary font-medium">媒体</th>
+                <th className="px-5 py-3 text-left text-emby-text-secondary font-medium">进度</th>
+                <th className="px-5 py-3 text-left text-emby-text-secondary font-medium">状态</th>
+                <th className="px-5 py-3 text-left text-emby-text-secondary font-medium">更新时间</th>
+              </tr>
+            </thead>
+            <tbody>
+              {recentWatchRecords.map((record) => (
+                <tr
+                  key={record.id}
+                  className="border-b border-emby-border-subtle/50 hover:bg-emby-bg-input/30"
+                >
+                  <td className="px-5 py-3">
+                    <Link
+                      to={`/admin/users/${record.userId}`}
+                      className="text-emby-green hover:text-emby-green/80 text-sm"
+                    >
+                      {record.username || record.userId.slice(0, 8)}
+                    </Link>
+                  </td>
+                  <td className="px-5 py-3">
+                    <Link
+                      to={`/media/${record.mediaId}`}
+                      className="text-white hover:text-emby-green text-sm truncate block max-w-[200px]"
+                      title={record.mediaTitle}
+                    >
+                      {record.mediaTitle}
+                    </Link>
+                  </td>
+                  <td className="px-5 py-3">
+                    <div className="flex items-center gap-2">
+                      <div className="w-20 h-1.5 bg-emby-bg-input rounded-full overflow-hidden">
+                        <div
+                          className={`h-full rounded-full ${record.completed ? 'bg-green-500' : 'bg-blue-500'}`}
+                          style={{ width: `${Math.min(record.percentage, 100)}%` }}
+                        />
+                      </div>
+                      <span className="text-emby-text-muted text-xs whitespace-nowrap">
+                        {Math.round(record.percentage)}%
+                      </span>
+                    </div>
+                    <div className="text-emby-text-muted text-xs mt-0.5">
+                      {formatDuration(record.progress)} / {formatDuration(record.duration)}
+                    </div>
+                  </td>
+                  <td className="px-5 py-3">
+                    {record.completed ? (
+                      <span className="inline-flex items-center gap-1 text-green-400 text-xs">
+                        <CheckCircle2 className="w-3 h-3" />
+                        已完成
+                      </span>
+                    ) : (
+                      <span className="inline-flex items-center gap-1 text-blue-400 text-xs">
+                        <Play className="w-3 h-3" />
+                        观看中
+                      </span>
+                    )}
+                  </td>
+                  <td className="px-5 py-3 text-emby-text-muted text-xs">
+                    {new Date(record.updatedAt).toLocaleString('zh-CN')}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
       </div>
 
       {/* 最近登录记录 */}

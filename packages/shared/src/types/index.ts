@@ -371,4 +371,16 @@ export interface UserActivityAggregate {
     loginCount: number;
     watchCount: number;
   }>;
+  recentWatchRecords: Array<{
+    id: string;
+    userId: string;
+    username: string | null;
+    mediaId: string;
+    mediaTitle: string;
+    progress: number;
+    duration: number;
+    percentage: number;
+    completed: boolean;
+    updatedAt: string;
+  }>;
 }

@@ -120,6 +120,7 @@ export const loginRecordService = {
       recentLoginsRaw,
       topWatchedRaw,
       topActiveUsersRaw,
+      recentWatchRaw,
     ] = await Promise.all([
       // Login stats
       prisma.loginRecord.count(),
@@ -155,6 +156,16 @@ export const loginRecordService = {
         _count: { id: true },
         orderBy: { _count: { id: 'desc' } },
         take: 10,
+      }),
+      // Recent watch records (last 20)
+      prisma.watchHistory.findMany({
+        orderBy: { updatedAt: 'desc' },
+        take: 20,
+        select: {
+          id: true, userId: true, mediaId: true,
+          progress: true, duration: true, percentage: true, completed: true,
+          updatedAt: true,
+        },
       }),
     ]);
 
@@ -218,6 +229,29 @@ export const loginRecordService = {
       createdAt: r.createdAt instanceof Date ? r.createdAt.toISOString() : String(r.createdAt),
     }));
 
+    // Recent watch records with username + media title
+    const rwUserIds = [...new Set(recentWatchRaw.map(r => r.userId))];
+    const rwMediaIds = [...new Set(recentWatchRaw.map(r => r.mediaId))];
+    const [rwUsers, rwMedia] = await Promise.all([
+      prisma.user.findMany({ where: { id: { in: rwUserIds } }, select: { id: true, username: true } }),
+      prisma.media.findMany({ where: { id: { in: rwMediaIds } }, select: { id: true, title: true } }),
+    ]);
+    const rwUserMap = new Map(rwUsers.map(u => [u.id, u.username]));
+    const rwMediaMap = new Map(rwMedia.map(m => [m.id, m.title]));
+
+    const recentWatchRecords = recentWatchRaw.map(r => ({
+      id: r.id,
+      userId: r.userId,
+      username: rwUserMap.get(r.userId) || null,
+      mediaId: r.mediaId,
+      mediaTitle: rwMediaMap.get(r.mediaId) || '未知',
+      progress: r.progress,
+      duration: r.duration,
+      percentage: r.percentage,
+      completed: r.completed,
+      updatedAt: r.updatedAt instanceof Date ? r.updatedAt.toISOString() : String(r.updatedAt),
+    }));
+
     return {
       loginStats: {
         totalLogins,
@@ -234,6 +268,7 @@ export const loginRecordService = {
       recentLogins,
       topWatchedMedia,
       topActiveUsers,
+      recentWatchRecords,
     };
   },
 };
