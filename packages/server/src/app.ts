@@ -32,9 +32,10 @@ const uploadsDir = path.resolve(__dirname, '../uploads');
 
 const app = express();
 
-// Trust proxy chain (nginx + docker network) so req.ip reflects X-Forwarded-For / X-Real-IP
-// 在 Docker 环境中，请求经过 nginx 容器和 docker 网络，需要信任整个代理链
-app.set('trust proxy', true);
+// Trust proxy：仅信任最前一跳（nginx / 反代），防止客户端通过 X-Forwarded-For 伪造 req.ip
+// 搭配 nginx.conf 中显式 proxy_set_header X-Forwarded-For $remote_addr，整体链路即为
+// client -> nginx(覆盖 XFF) -> node(取第一跳 = nginx 原值)
+app.set('trust proxy', 1);
 
 // Rate limiter for auth routes
 const authLimiter = rateLimit({
@@ -54,7 +55,8 @@ app.use(helmet({
       styleSrc: ["'self'", "'unsafe-inline'"],
       imgSrc: ["'self'", 'data:', 'blob:', 'https:'],
       mediaSrc: ["'self'", 'blob:', 'https:'],
-      connectSrc: ["'self'", 'https:'],
+      // 仅允许同源 API 与代理；第三方跨域 fetch 被 CORS 挡住即可，不需要宽容 CSP
+      connectSrc: ["'self'"],
       fontSrc: ["'self'"],
     },
   },
@@ -81,9 +83,10 @@ if (config.nodeEnv !== 'test') {
 }
 
 // H5: 使用绝对路径提供静态文件，添加安全头
+// uploads 文件名不是内容 hash，备份恢复可能覆盖同名文件 → 不能用 immutable；短 max-age 让客户端及时刷新
 app.use('/uploads', (_req, res, next) => {
   res.setHeader('X-Content-Type-Options', 'nosniff');
-  res.setHeader('Cache-Control', 'public, max-age=86400');
+  res.setHeader('Cache-Control', 'public, max-age=300, must-revalidate');
   next();
 }, express.static(uploadsDir));
 

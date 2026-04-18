@@ -1,7 +1,12 @@
 import type { ImportItem } from '@m3u8-preview/shared';
 
+/** 仅把整行以 # 起始的行视为注释，不影响 URL 内部的 #fragment（后者不在行首） */
+function isCommentLine(line: string): boolean {
+  return line.startsWith('#');
+}
+
 export function parseText(content: string): ImportItem[] {
-  const lines = content.split('\n').map(l => l.trim()).filter(l => l && !l.startsWith('#'));
+  const lines = content.split('\n').map(l => l.trim()).filter(l => l && !isCommentLine(l));
 
   return lines.map(line => {
     if (line.includes('|')) {

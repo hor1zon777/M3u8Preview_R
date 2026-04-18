@@ -15,8 +15,13 @@ async function main() {
   // Check ffmpeg availability for thumbnail generation
   await checkFfmpeg();
 
-  server = app.listen(config.port, '0.0.0.0', () => {
-    console.log(`Server running on http://0.0.0.0:${config.port}`);
+  // 监听地址：生产默认 127.0.0.1（搭配 nginx 反代 + host 网络模式，避免 3000 端口暴露到宿主机所有网卡）
+  // 开发环境默认 0.0.0.0 便于局域网调试；可通过 BIND_ADDRESS 显式覆盖
+  const bindAddress = process.env.BIND_ADDRESS
+    || (config.nodeEnv === 'production' ? '127.0.0.1' : '0.0.0.0');
+
+  server = app.listen(config.port, bindAddress, () => {
+    console.log(`Server running on http://${bindAddress}:${config.port}`);
     console.log(`Environment: ${config.nodeEnv}`);
   });
 

@@ -11,7 +11,7 @@ export const importService = {
    * 检测文件格式并解析为导入条目数组。
    * 从 importController 抽取到 service 层，保持 controller 只负责 HTTP 协议处理。
    */
-  detectFormatAndParse(file?: Express.Multer.File, body?: any): { items: any[]; format: string; fileName?: string } {
+  async detectFormatAndParse(file?: Express.Multer.File, body?: any): Promise<{ items: any[]; format: string; fileName?: string }> {
     // If file is provided, parse based on file extension
     if (file) {
       const ext = file.originalname.split('.').pop()?.toLowerCase();
@@ -21,7 +21,7 @@ export const importService = {
         case 'csv':
           return { items: parseCsv(file.buffer.toString('utf-8')), format: 'CSV', fileName };
         case 'xlsx':
-          return { items: parseExcel(file.buffer), format: 'EXCEL', fileName };
+          return { items: await parseExcel(file.buffer), format: 'EXCEL', fileName };
         case 'json':
           return { items: parseJson(file.buffer.toString('utf-8')), format: 'JSON', fileName };
         case 'txt':

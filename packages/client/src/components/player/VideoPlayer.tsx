@@ -1,7 +1,7 @@
 import { useEffect, useRef, useCallback, useState, forwardRef, useImperativeHandle } from 'react';
 import Hls from 'hls.js';
 import { usePlayerStore } from '../../stores/playerStore.js';
-import api from '../../services/api.js';
+import api, { getAccessToken } from '../../services/api.js';
 import type { Media } from '@m3u8-preview/shared';
 
 const MAX_NETWORK_RETRY = 5;
@@ -113,6 +113,14 @@ export const VideoPlayer = forwardRef<HTMLVideoElement, VideoPlayerProps>(
           startPosition: startTime,
           maxBufferLength: 30,
           maxMaxBufferLength: 60,
+          // 为代理路径（/api/v1/proxy/...）自动附加 Bearer token
+          // hls.js 默认使用 XHR 加载（未启用 fetch loader），因此只需 xhrSetup
+          xhrSetup: (xhr, url) => {
+            if (url.startsWith('/api/') || url.includes('/api/v1/proxy/')) {
+              const token = getAccessToken();
+              if (token) xhr.setRequestHeader('Authorization', `Bearer ${token}`);
+            }
+          },
         });
 
         hls.loadSource(url);

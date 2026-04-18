@@ -2,7 +2,10 @@ import type { Request, RequestHandler } from 'express';
 import { prisma } from '../lib/prisma.js';
 
 const SETTING_KEY = 'enableRateLimit';
-const CACHE_TTL_MS = 5000;
+// 缓存 TTL：1 秒。收紧管理员切换限流开关后的旧状态窗口。
+// 注意：切换时调用方应主动调用 invalidateRateLimitSettingCache() 立即生效，
+// 此 TTL 是兜底，防止未触发 invalidate 时的长时间漂移。
+const CACHE_TTL_MS = 1000;
 const DEFAULT_ENABLED = true;
 
 let cachedEnabled = DEFAULT_ENABLED;

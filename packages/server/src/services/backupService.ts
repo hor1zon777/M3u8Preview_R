@@ -118,6 +118,21 @@ export const backupService = {
       throw new AppError('无法解析 ZIP 文件，请确认文件格式正确', 400);
     }
 
+    // zip-bomb 防护：累计未压缩大小不得超过 MAX_UNCOMPRESSED_SIZE
+    const MAX_UNCOMPRESSED_SIZE = 2 * 1024 * 1024 * 1024; // 2GB
+    const MAX_ENTRIES = 50000;
+    const entries = zip.getEntries();
+    if (entries.length > MAX_ENTRIES) {
+      throw new AppError('ZIP 包含过多条目，疑似异常文件', 400);
+    }
+    let totalUncompressed = 0;
+    for (const entry of entries) {
+      totalUncompressed += entry.header.size;
+      if (totalUncompressed > MAX_UNCOMPRESSED_SIZE) {
+        throw new AppError('ZIP 解压后体积过大，疑似 zip-bomb', 400);
+      }
+    }
+
     // 读取 backup.json
     const backupEntry = zip.getEntry('backup.json');
     if (!backupEntry) {
@@ -136,6 +151,15 @@ export const backupService = {
       throw new AppError('backup.json 结构不完整，缺少 version 或 tables', 400);
     }
 
+    // 严格 version 白名单（未来升级格式时新增版本）
+    const SUPPORTED_VERSIONS = new Set(['1.0']);
+    if (!SUPPORTED_VERSIONS.has(String(backupData.version))) {
+      throw new AppError(
+        `不支持的备份版本 ${backupData.version}，当前支持: ${[...SUPPORTED_VERSIONS].join(', ')}`,
+        400,
+      );
+    }
+
     const requiredTables = [
       'users', 'categories', 'tags', 'media', 'mediaTags',
       'favorites', 'playlists', 'playlistItems', 'watchHistory',
@@ -148,6 +172,37 @@ export const backupService = {
     }
 
     const tables = backupData.tables;
+
+    // 每个表的字段白名单：只接受已知列，抵御注入额外字段（攻击扩面或适配新 schema）
+    const USER_FIELDS = ['id', 'username', 'passwordHash', 'role', 'avatar', 'isActive', 'createdAt', 'updatedAt'] as const;
+    const ALLOWED_ROLES = new Set(['USER', 'ADMIN']);
+
+    function pickFields<T extends Record<string, unknown>>(row: unknown, fields: readonly string[]): Partial<T> {
+      if (!row || typeof row !== 'object') return {};
+      const out: Record<string, unknown> = {};
+      for (const f of fields) {
+        if (f in (row as Record<string, unknown>)) {
+          out[f] = (row as Record<string, unknown>)[f];
+        }
+      }
+      return out as Partial<T>;
+    }
+
+    // users：白名单 + role 值校验 + 强制类型，防止注入未知字段、非法 role
+    const sanitizedUsers = tables.users.map((u: unknown) => {
+      const picked = pickFields<{ username: string; role: string; isActive: boolean }>(u, USER_FIELDS);
+      if (typeof picked.username !== 'string' || picked.username.length === 0) {
+        throw new AppError('users 表存在非法记录（username 缺失）', 400);
+      }
+      if (typeof picked.role !== 'string' || !ALLOWED_ROLES.has(picked.role)) {
+        throw new AppError(`users 表存在非法 role: ${String(picked.role)}`, 400);
+      }
+      if (typeof picked.isActive !== 'boolean') {
+        picked.isActive = true;
+      }
+      return picked;
+    });
+
     let totalRecords = 0;
 
     // 在事务中执行清空 + 写入
@@ -167,9 +222,9 @@ export const backupService = {
       await tx.user.deleteMany();
 
       // 写入阶段（正序，先写无依赖的表）
-      if (tables.users.length > 0) {
-        await tx.user.createMany({ data: tables.users });
-        totalRecords += tables.users.length;
+      if (sanitizedUsers.length > 0) {
+        await tx.user.createMany({ data: sanitizedUsers as never });
+        totalRecords += sanitizedUsers.length;
       }
 
       if (tables.categories.length > 0) {
@@ -256,11 +311,28 @@ export const backupService = {
       }
 
       for (const entry of uploadEntries) {
-        const targetPath = path.resolve(uploadsDir, '..', entry.entryName);
-        // 防止路径穿越
-        if (!targetPath.startsWith(uploadsDir)) {
+        // 去掉 "uploads/" 前缀，剩余部分作为相对路径；拒绝含绝对路径 / 穿越的条目
+        const rawName = entry.entryName;
+        if (!rawName.startsWith('uploads/')) continue;
+        const relativeName = rawName.slice('uploads/'.length);
+        if (relativeName.length === 0) continue;
+
+        // 规范化：不允许绝对路径、盘符、反斜杠分隔符
+        if (
+          path.isAbsolute(relativeName) ||
+          /^[a-zA-Z]:[\\/]/.test(relativeName) ||
+          relativeName.includes('\\')
+        ) {
           continue;
         }
+
+        const targetPath = path.join(uploadsDir, relativeName);
+        const rel = path.relative(uploadsDir, targetPath);
+        // rel 不得以 '..' 开头、不得包含段级 '..'、不得为绝对路径
+        if (!rel || rel.startsWith('..') || path.isAbsolute(rel) || rel.split(path.sep).includes('..')) {
+          continue;
+        }
+
         const dir = path.dirname(targetPath);
         if (!fs.existsSync(dir)) {
           fs.mkdirSync(dir, { recursive: true });

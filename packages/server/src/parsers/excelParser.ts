@@ -1,23 +1,88 @@
-import * as XLSX from 'xlsx';
+import ExcelJS from 'exceljs';
 import type { ImportItem } from '@m3u8-preview/shared';
+import { AppError } from '../middleware/errorHandler.js';
 
-export function parseExcel(buffer: Buffer): ImportItem[] {
-  const workbook = XLSX.read(buffer, { type: 'buffer' });
-  const sheetName = workbook.SheetNames[0];
-  const sheet = workbook.Sheets[sheetName];
-  const rows: any[] = XLSX.utils.sheet_to_json(sheet);
+function resolveCellValue(val: ExcelJS.CellValue): string | number | boolean | null {
+  if (val == null) return null;
+  if (typeof val === 'string' || typeof val === 'number' || typeof val === 'boolean') return val;
+  if (val instanceof Date) return val.getFullYear();
+  if (typeof val === 'object') {
+    if ('richText' in val) return val.richText.map((r) => r.text).join('');
+    if ('text' in val) return (val as ExcelJS.CellHyperlinkValue).text;
+    if ('result' in val) {
+      const r = (val as ExcelJS.CellFormulaValue).result;
+      if (r != null && typeof r !== 'object') return r;
+      return null;
+    }
+    if ('error' in val) return null;
+  }
+  return String(val);
+}
 
-  return rows.map((row: any) => {
-    // Support both English and Chinese column names
-    return {
-      title: row.title || row['\u6807\u9898'] || row.Title || '',
-      m3u8Url: row.m3u8Url || row.m3u8_url || row.url || row.URL || row['\u94fe\u63a5'] || '',
-      posterUrl: row.posterUrl || row.poster_url || row.poster || row['\u6d77\u62a5'] || undefined,
-      description: row.description || row['\u63cf\u8ff0'] || row.Description || undefined,
-      year: row.year || row['\u5e74\u4efd'] || row.Year ? parseInt(String(row.year || row['\u5e74\u4efd'] || row.Year)) : undefined,
-      artist: row.artist || row['\u4f5c\u8005'] || row['\u6f14\u5458'] || row.Artist || undefined,
-      categoryName: row.category || row['\u5206\u7c7b'] || row.Category || undefined,
-      tagNames: (row.tags || row['\u6807\u7b7e'] || row.Tags) ? String(row.tags || row['\u6807\u7b7e'] || row.Tags).split(',').map((t: string) => t.trim()).filter(Boolean) : undefined,
-    };
+function str(val: unknown): string {
+  if (val == null) return '';
+  return String(val);
+}
+
+export async function parseExcel(buffer: Buffer): Promise<ImportItem[]> {
+  const workbook = new ExcelJS.Workbook();
+  try {
+    await workbook.xlsx.load(new Uint8Array(buffer).buffer as ArrayBuffer);
+  } catch {
+    throw new AppError('无法解析 Excel 文件，请检查文件格式', 400);
+  }
+
+  const sheet = workbook.worksheets[0];
+  if (!sheet || sheet.rowCount < 2) return [];
+
+  const headerRow = sheet.getRow(1);
+  const headers: string[] = [];
+  headerRow.eachCell({ includeEmpty: false }, (cell, colNumber) => {
+    const v = resolveCellValue(cell.value);
+    headers[colNumber] = v != null ? String(v).trim() : '';
   });
+
+  const results: ImportItem[] = [];
+
+  for (let i = 2; i <= sheet.rowCount; i++) {
+    const row = sheet.getRow(i);
+    const obj: Record<string, string | number | boolean | null> = {};
+    let hasValue = false;
+
+    row.eachCell({ includeEmpty: false }, (cell, colNumber) => {
+      const key = headers[colNumber];
+      if (key) {
+        obj[key] = resolveCellValue(cell.value);
+        hasValue = true;
+      }
+    });
+
+    if (!hasValue) continue;
+
+    const yearRaw = obj.year ?? obj['年份'] ?? obj.Year;
+    const tagsRaw = obj.tags ?? obj['标签'] ?? obj.Tags;
+
+    results.push({
+      title: str(obj.title ?? obj['标题'] ?? obj.Title),
+      m3u8Url: str(obj.m3u8Url ?? obj.m3u8_url ?? obj.url ?? obj.URL ?? obj['链接']),
+      posterUrl: (obj.posterUrl ?? obj.poster_url ?? obj.poster ?? obj['海报']) != null
+        ? str(obj.posterUrl ?? obj.poster_url ?? obj.poster ?? obj['海报'])
+        : undefined,
+      description: (obj.description ?? obj['描述'] ?? obj.Description) != null
+        ? str(obj.description ?? obj['描述'] ?? obj.Description)
+        : undefined,
+      year: yearRaw != null ? parseInt(String(yearRaw)) || undefined : undefined,
+      artist: (obj.artist ?? obj['作者'] ?? obj['演员'] ?? obj.Artist) != null
+        ? str(obj.artist ?? obj['作者'] ?? obj['演员'] ?? obj.Artist)
+        : undefined,
+      categoryName: (obj.category ?? obj['分类'] ?? obj.Category) != null
+        ? str(obj.category ?? obj['分类'] ?? obj.Category)
+        : undefined,
+      tagNames: tagsRaw
+        ? String(tagsRaw).split(',').map((t: string) => t.trim()).filter(Boolean)
+        : undefined,
+    });
+  }
+
+  return results;
 }

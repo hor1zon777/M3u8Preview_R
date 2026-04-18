@@ -1,7 +1,6 @@
 import { Router } from 'express';
 import { Readable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
-import dns from 'node:dns/promises';
 import rateLimit from 'express-rate-limit';
 import { prisma } from '../lib/prisma.js';
 import { AppError } from '../middleware/errorHandler.js';
@@ -9,6 +8,7 @@ import { authenticate } from '../middleware/auth.js';
 import { asyncHandler } from '../utils/asyncHandler.js';
 import { signProxyUrl, verifyProxySignature } from '../utils/proxySign.js';
 import { conditionalRateLimit } from '../middleware/conditionalRateLimit.js';
+import { isPrivateHostname, validateResolvedIp, safeFetch } from '../utils/ssrfGuard.js';
 
 const router = Router();
 
@@ -93,9 +93,9 @@ const mediaUrlCache = new TtlCache<true>(10 * 60 * 1000);
 
 // ==================== 安全校验 ====================
 
-/** 允许代理的文件扩展名白名单 */
+/** 允许代理的文件扩展名白名单（视频/HLS 相关；去掉图片类型，缩小 SSRF/代理滥用面） */
 const ALLOWED_EXTENSIONS = new Set([
-  '.m3u8', '.ts', '.m4s', '.mp4', '.aac', '.key', '.jpeg', '.jpg', '.png',
+  '.m3u8', '.ts', '.m4s', '.mp4', '.aac', '.key',
 ]);
 
 /** 提取路径最后一段的文件扩展名 */
@@ -106,87 +106,10 @@ function getPathExtension(pathname: string): string {
   return dotIndex >= 0 ? cleanSegment.slice(dotIndex).toLowerCase() : '';
 }
 
-/** 判断 IP 地址是否为私有/内网地址 */
-function isPrivateIp(ip: string): boolean {
-  const v4Parts = ip.split('.').map(Number);
-  if (v4Parts.length === 4 && v4Parts.every(p => p >= 0 && p <= 255)) {
-    return (
-      v4Parts[0] === 0 ||
-      v4Parts[0] === 127 ||
-      v4Parts[0] === 10 ||
-      (v4Parts[0] === 172 && v4Parts[1] >= 16 && v4Parts[1] <= 31) ||
-      (v4Parts[0] === 192 && v4Parts[1] === 168) ||
-      (v4Parts[0] === 169 && v4Parts[1] === 254) ||
-      (v4Parts[0] === 100 && v4Parts[1] >= 64 && v4Parts[1] <= 127)
-    );
-  }
-  return false;
-}
-
-/** SSRF 防护：在 hostname 字符串级别做初步检查 */
-function isPrivateHostname(hostname: string): boolean {
-  const clean = hostname.replace(/^\[|\]$/g, '');
-
-  if (
-    clean === 'localhost' ||
-    clean === '127.0.0.1' ||
-    clean === '0.0.0.0' ||
-    clean === '::1' ||
-    clean === '::ffff:127.0.0.1'
-  ) {
-    return true;
-  }
-
-  if (clean.endsWith('.local') || clean.endsWith('.internal') || clean.endsWith('.localhost')) {
-    return true;
-  }
-
-  if (isPrivateIp(clean)) {
-    return true;
-  }
-
-  const v4MappedMatch = clean.match(/^::ffff:(\d+\.\d+\.\d+\.\d+)$/i);
-  if (v4MappedMatch && isPrivateIp(v4MappedMatch[1])) {
-    return true;
-  }
-
-  return false;
-}
-
-/** SSRF 防护：DNS 解析后校验实际 IP 地址（带缓存） */
-async function validateResolvedIp(hostname: string): Promise<void> {
-  // 命中缓存则跳过 DNS 解析
-  if (dnsCache.get(hostname) !== undefined) {
-    return;
-  }
-
-  try {
-    const addresses = await dns.resolve4(hostname);
-    for (const addr of addresses) {
-      if (isPrivateIp(addr)) {
-        throw new AppError('不允许代理内网地址', 403);
-      }
-    }
-  } catch (error) {
-    if (error instanceof AppError) throw error;
-    try {
-      const addresses = await dns.resolve6(hostname);
-      for (const addr of addresses) {
-        const clean = addr.replace(/^\[|\]$/g, '');
-        if (clean === '::1' || clean.startsWith('fe80:') || clean.startsWith('fc') || clean.startsWith('fd')) {
-          throw new AppError('不允许代理内网地址', 403);
-        }
-        const v4Match = clean.match(/^::ffff:(\d+\.\d+\.\d+\.\d+)$/i);
-        if (v4Match && isPrivateIp(v4Match[1])) {
-          throw new AppError('不允许代理内网地址', 403);
-        }
-      }
-    } catch (err) {
-      if (err instanceof AppError) throw err;
-    }
-  }
-
-  // DNS 校验通过，缓存结果
+/** DNS 解析结果缓存包装：命中缓存则跳过解析 */
+async function validateResolvedIpCached(hostname: string): Promise<void> {
+  if (dnsCache.get(hostname) !== undefined) return;
+  await validateResolvedIp(hostname);
   dnsCache.set(hostname, true);
 }
 
@@ -207,7 +130,7 @@ async function validateProxyUrl(rawUrl: string): Promise<URL> {
     throw new AppError('不允许代理内网地址', 403);
   }
 
-  await validateResolvedIp(parsed.hostname);
+  await validateResolvedIpCached(parsed.hostname);
 
   const ext = getPathExtension(parsed.pathname);
   if (!ext || !ALLOWED_EXTENSIONS.has(ext)) {
@@ -221,8 +144,9 @@ async function validateProxyUrl(rawUrl: string): Promise<URL> {
 
 /**
  * 重写 m3u8 playlist 中的相对/绝对路径为代理 URL
+ * 所有重写出的 URL 均绑定传入 userId 签名，防止跨用户分享
  */
-function rewriteM3u8Content(content: string, baseUrl: string): string {
+function rewriteM3u8Content(content: string, baseUrl: string, userId: string): string {
   const lines = content.split('\n');
   const proxyPrefix = '/api/v1/proxy/m3u8?url=';
 
@@ -236,7 +160,7 @@ function rewriteM3u8Content(content: string, baseUrl: string): string {
       if (trimmed.startsWith('#') && trimmed.includes('URI="')) {
         return line.replace(/URI="([^"]+)"/g, (_match, uri: string) => {
           const absoluteUrl = resolveUrl(uri, baseUrl);
-          const signed = signProxyUrl(absoluteUrl);
+          const signed = signProxyUrl(absoluteUrl, userId);
           return `URI="${proxyPrefix}${encodeURIComponent(absoluteUrl)}${signed}"`;
         });
       }
@@ -244,7 +168,7 @@ function rewriteM3u8Content(content: string, baseUrl: string): string {
       if (trimmed.startsWith('#')) return line;
 
       const absoluteUrl = resolveUrl(trimmed, baseUrl);
-      const signed = signProxyUrl(absoluteUrl);
+      const signed = signProxyUrl(absoluteUrl, userId);
       return `${proxyPrefix}${encodeURIComponent(absoluteUrl)}${signed}`;
     })
     .join('\n');
@@ -266,21 +190,28 @@ function resolveUrl(url: string, baseUrl: string): string {
 
 // ==================== 数据库校验（带缓存） ====================
 
-/** 校验数据库中是否存在该 m3u8Url 对应的媒体记录 */
-async function validateMediaExists(targetUrl: URL): Promise<void> {
+/**
+ * 校验数据库中是否存在该 m3u8Url 对应的媒体记录
+ * @param userId 请求用户 ID（当前所有用户共享 ACTIVE 媒体，未来引入私有合集时在此处收紧权限）
+ */
+async function validateMediaExists(targetUrl: URL, userId: string): Promise<void> {
   const fullUrl = targetUrl.href;
+  const cacheKey = `${userId}:${fullUrl}`;
 
   // 命中缓存直接返回
-  if (mediaUrlCache.get(fullUrl) !== undefined) {
+  if (mediaUrlCache.get(cacheKey) !== undefined) {
     return;
   }
 
+  // 当前策略：所有登录用户均可访问 ACTIVE 媒体
+  // 如引入隐私 playlist / VIP 合集，应在此处按 userId 做归属校验，例如：
+  //   where: { m3u8Url, status: 'ACTIVE', OR: [{ ownerId: userId }, { visibility: 'PUBLIC' }] }
   const exactMatch = await prisma.media.findFirst({
     where: { m3u8Url: fullUrl, status: 'ACTIVE' },
     select: { id: true },
   });
   if (exactMatch) {
-    mediaUrlCache.set(fullUrl, true);
+    mediaUrlCache.set(cacheKey, true);
     return;
   }
 
@@ -294,7 +225,7 @@ async function validateMediaExists(targetUrl: URL): Promise<void> {
     select: { id: true },
   });
   if (prefixMatch) {
-    mediaUrlCache.set(fullUrl, true);
+    mediaUrlCache.set(cacheKey, true);
     return;
   }
 
@@ -357,6 +288,11 @@ router.get('/sign', conditionalRateLimit(signLimiter), authenticate, asyncHandle
     throw new AppError('缺少 url 参数', 400);
   }
 
+  const userId = req.user?.userId;
+  if (!userId) {
+    throw new AppError('Authentication required', 401);
+  }
+
   const targetUrl = await validateProxyUrl(rawUrl);
 
   // 签名端点仅处理 m3u8 文件
@@ -365,31 +301,42 @@ router.get('/sign', conditionalRateLimit(signLimiter), authenticate, asyncHandle
     throw new AppError('签名端点仅支持 m3u8 URL', 400);
   }
 
-  // 数据库校验：确保 URL 对应的媒体记录存在
-  await validateMediaExists(targetUrl);
+  // 数据库校验：确保 URL 对应的媒体记录存在且用户有权访问
+  await validateMediaExists(targetUrl, userId);
 
-  const signedParams = signProxyUrl(rawUrl);
+  const signedParams = signProxyUrl(rawUrl, userId);
   const proxyUrl = `/api/v1/proxy/m3u8?url=${encodeURIComponent(rawUrl)}${signedParams}`;
 
   res.json({ success: true, proxyUrl });
 }));
 
+/** 校验 Range 头格式，仅允许 bytes=<num>-<num?> */
+function isValidRangeHeader(value: string): boolean {
+  return /^bytes=\d+-\d*$/.test(value);
+}
+
 /**
  * GET /api/v1/proxy/m3u8?url=<encoded_url>
  * 代理外部 m3u8/ts 等媒体资源，解决 CORS 问题
+ * 需要登录 + 签名（签名绑定登录用户）
  */
-router.get('/m3u8', asyncHandler(async (req, res) => {
+router.get('/m3u8', authenticate, asyncHandler(async (req, res) => {
   const rawUrl = req.query.url as string | undefined;
   if (!rawUrl) {
     throw new AppError('缺少 url 参数', 400);
   }
 
+  const userId = req.user?.userId;
+  if (!userId) {
+    throw new AppError('Authentication required', 401);
+  }
+
   const targetUrl = await validateProxyUrl(rawUrl);
 
-  // 签名验证
+  // 签名验证（绑定 userId，防止签名被他人分享）
   const expires = req.query.expires as string | undefined;
   const sig = req.query.sig as string | undefined;
-  if (!expires || !sig || !verifyProxySignature(rawUrl, expires, sig)) {
+  if (!expires || !sig || !verifyProxySignature(rawUrl, expires, sig, userId)) {
     throw new AppError('签名无效或已过期', 403);
   }
 
@@ -404,6 +351,10 @@ router.get('/m3u8', asyncHandler(async (req, res) => {
 
   const shouldSendMissavReferer = isSurritHostname(targetUrl.hostname);
 
+  // 校验并过滤 Range 头，防止畸形值转发给上游
+  const rawRange = req.headers.range;
+  const safeRange = typeof rawRange === 'string' && isValidRangeHeader(rawRange) ? rawRange : undefined;
+
   // 连接级别超时控制
   const connectController = new AbortController();
   const connectTimeout = setTimeout(() => connectController.abort(), CONNECT_TIMEOUT_MS);
@@ -415,15 +366,16 @@ router.get('/m3u8', asyncHandler(async (req, res) => {
   connectController.signal.addEventListener('abort', () => totalController.abort());
 
   try {
-    const response = await fetch(targetUrl.href, {
+    // safeFetch 使用 redirect: 'manual' + 每跳 DNS 校验，防止上游 302 到内网
+    const response = await safeFetch(targetUrl.href, {
       signal: totalController.signal,
       headers: {
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
         ...(shouldSendMissavReferer ? { Referer: 'https://missav.ws' } : {}),
         Accept: '*/*',
-        ...(req.headers.range ? { Range: req.headers.range } : {}),
+        ...(safeRange ? { Range: safeRange } : {}),
       },
-      redirect: 'follow',
+      maxRedirects: 3,
     });
 
     clearTimeout(connectTimeout);
@@ -454,11 +406,11 @@ router.get('/m3u8', asyncHandler(async (req, res) => {
       res.status(206);
     }
 
-    // 缓存策略
+    // 缓存策略：签名绑定用户，必须禁止共享缓存，避免签名过期后 CDN 命中被他人复用
     if (isM3u8) {
-      res.setHeader('Cache-Control', 'no-cache');
+      res.setHeader('Cache-Control', 'no-store');
     } else {
-      res.setHeader('Cache-Control', 'public, max-age=86400');
+      res.setHeader('Cache-Control', 'private, max-age=600');
     }
 
     // 对 m3u8 内容进行路径重写
@@ -466,7 +418,7 @@ router.get('/m3u8', asyncHandler(async (req, res) => {
     if (shouldRewrite) {
       const body = await response.text();
       clearTimeout(totalTimeout);
-      const rewritten = rewriteM3u8Content(body, targetUrl.href);
+      const rewritten = rewriteM3u8Content(body, targetUrl.href, userId);
       res.removeHeader('Content-Length');
       res.send(rewritten);
       return;

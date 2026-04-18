@@ -4,6 +4,7 @@ import crypto from 'crypto';
 import { prisma } from '../lib/prisma.js';
 import { config } from '../config.js';
 import { AppError } from '../middleware/errorHandler.js';
+import { verifyJwt } from '../utils/verifyJwt.js';
 import type { TokenPayload, AuthResponse, User } from '@m3u8-preview/shared';
 import { UserRole } from '@m3u8-preview/shared';
 
@@ -15,11 +16,19 @@ function hashToken(token: string): string {
 const REFRESH_TOKEN_EXPIRY_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
 
 function generateAccessToken(payload: TokenPayload): string {
-  return jwt.sign(payload, config.jwt.secret, { expiresIn: config.jwt.accessExpiresIn, algorithm: 'HS256' } as jwt.SignOptions);
+  return jwt.sign(payload, config.jwt.secret, {
+    expiresIn: config.jwt.accessExpiresIn,
+    algorithm: 'HS256',
+    keyid: config.jwt.kid,
+  } as jwt.SignOptions);
 }
 
 function generateRefreshToken(payload: TokenPayload): string {
-  return jwt.sign(payload, config.jwt.refreshSecret, { expiresIn: config.jwt.refreshExpiresIn, algorithm: 'HS256' } as jwt.SignOptions);
+  return jwt.sign(payload, config.jwt.refreshSecret, {
+    expiresIn: config.jwt.refreshExpiresIn,
+    algorithm: 'HS256',
+    keyid: config.jwt.kid,
+  } as jwt.SignOptions);
 }
 
 function sanitizeUser(user: any): User {
@@ -106,10 +115,10 @@ export const authService = {
   },
 
   async refresh(token: string): Promise<{ accessToken: string; refreshToken: string; user: User }> {
-    // Verify the refresh token
+    // Verify the refresh token（支持 kid 轮换）
     let payload: TokenPayload;
     try {
-      payload = jwt.verify(token, config.jwt.refreshSecret, { algorithms: ['HS256'] }) as TokenPayload;
+      payload = verifyJwt<TokenPayload>(token, 'refresh');
     } catch {
       throw new AppError('Invalid refresh token', 401);
     }

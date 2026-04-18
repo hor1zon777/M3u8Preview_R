@@ -8,12 +8,17 @@ import { mediaCreateSchema, mediaUpdateSchema, mediaQuerySchema, idParamSchema }
 
 const router = Router();
 
-// M13: incrementViews 限流，每 IP 每 15 分钟最多 100 次
+// M13: incrementViews 限流，按 userId（登录）或 IP（未登录）分桶
+// 防止攻击者通过多 IP 放大刷量
 const viewsLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   max: 100,
   standardHeaders: true,
   legacyHeaders: false,
+  keyGenerator: (req) => {
+    const userId = req.user?.userId;
+    return userId ? `u:${userId}` : `ip:${req.ip}`;
+  },
   message: { success: false, error: 'Too many view requests' },
 });
 
@@ -24,8 +29,8 @@ router.get('/random', mediaController.getRandom);
 router.get('/artists', authenticate, mediaController.getArtists);
 router.get('/:id', validate(idParamSchema, 'params'), mediaController.findById);
 
-// Authenticated routes
-router.post('/:id/views', conditionalRateLimit(viewsLimiter), validate(idParamSchema, 'params'), mediaController.incrementViews);
+// Authenticated routes — optionalAuth 让 keyGenerator 能拿到 userId
+router.post('/:id/views', optionalAuth, conditionalRateLimit(viewsLimiter), validate(idParamSchema, 'params'), mediaController.incrementViews);
 
 // Admin routes
 router.post('/', authenticate, requireRole('ADMIN'), validate(mediaCreateSchema), mediaController.create);

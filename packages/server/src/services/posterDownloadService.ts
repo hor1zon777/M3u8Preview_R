@@ -6,6 +6,8 @@ import { fileURLToPath } from 'url';
 import { Readable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
 import { prisma } from '../lib/prisma.js';
+import { safeFetch, assertSafeUrl } from '../utils/ssrfGuard.js';
+import { AppError } from '../middleware/errorHandler.js';
 
 const fsMkdir = promisify(fs.mkdir);
 
@@ -119,6 +121,8 @@ async function ensureDir() {
 
 /** 判断错误是否值得重试（网络错误、超时、5xx） */
 function isRetryableError(err: unknown, httpStatus?: number): boolean {
+  // SSRF / 协议 / URL 校验等业务错误不重试
+  if (err instanceof AppError) return false;
   if (httpStatus && httpStatus >= 400 && httpStatus < 500) return false;
   if (httpStatus && httpStatus >= 500) return true;
   if (err instanceof Error) {
@@ -140,7 +144,8 @@ function sleep(ms: number): Promise<void> {
  * @returns 本地路径，或抛出错误/返回 null（不可重试的明确失败）
  */
 async function downloadPosterOnce(externalUrl: string): Promise<string | null> {
-  const parsed = new URL(externalUrl);
+  // SSRF 防护：校验协议 + DNS 解析后 IP 不在内网
+  const parsed = await assertSafeUrl(externalUrl);
 
   let ext = getPathExtension(parsed.pathname);
   const referer = getRefererForHost(parsed.hostname);
@@ -152,14 +157,15 @@ async function downloadPosterOnce(externalUrl: string): Promise<string | null> {
   const timeout = setTimeout(() => controller.abort(), DOWNLOAD_TIMEOUT_MS);
 
   try {
-    const response = await fetch(parsed.href, {
+    // 使用 safeFetch：redirect: 'manual' + 每跳重新校验 DNS
+    const response = await safeFetch(parsed.href, {
       signal: controller.signal,
       headers: {
         'User-Agent': UA,
         Accept: 'image/*',
         ...(referer ? { Referer: referer } : {}),
       },
-      redirect: 'follow',
+      maxRedirects: 3,
     });
 
     clearTimeout(timeout);
