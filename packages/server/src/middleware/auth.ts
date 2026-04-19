@@ -14,7 +14,12 @@ declare global {
 export function authenticate(req: Request, _res: Response, next: NextFunction) {
   try {
     const authHeader = req.headers.authorization;
-    const token = authHeader?.startsWith('Bearer ') ? authHeader.slice(7) : null;
+    let token = authHeader?.startsWith('Bearer ') ? authHeader.slice(7) : null;
+
+    // SSE/EventSource 不支持自定义 header，允许通过 query 传递 token
+    if (!token && typeof req.query.token === 'string') {
+      token = req.query.token;
+    }
 
     if (!token) {
       throw new AppError('Authentication required', 401);

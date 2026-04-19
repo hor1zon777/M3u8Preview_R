@@ -1,19 +1,54 @@
 import { Writable } from 'stream';
 import path from 'path';
 import fs from 'fs';
+import os from 'os';
 import { fileURLToPath } from 'url';
 import archiver from 'archiver';
 import AdmZip from 'adm-zip';
 import { prisma } from '../lib/prisma.js';
 import { invalidateRateLimitSettingCache } from '../middleware/conditionalRateLimit.js';
 import { AppError } from '../middleware/errorHandler.js';
-import type { RestoreResult } from '@m3u8-preview/shared';
+import type { RestoreResult, ExportProgress, BackupProgress } from '@m3u8-preview/shared';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const uploadsDir = path.resolve(__dirname, '../../uploads');
 
 export interface ExportOptions {
   includePosters?: boolean;
+}
+
+export type ProgressCallback = (progress: ExportProgress) => void;
+
+function countFilesRecursive(dir: string, excludeDir?: string): number {
+  if (!fs.existsSync(dir)) return 0;
+  let count = 0;
+  for (const child of fs.readdirSync(dir)) {
+    const childPath = path.join(dir, child);
+    if (excludeDir && childPath === excludeDir) continue;
+    const stat = fs.statSync(childPath);
+    if (stat.isDirectory()) {
+      count += countFilesRecursive(childPath);
+    } else {
+      count++;
+    }
+  }
+  return count;
+}
+
+function walkFiles(dir: string, basePath: string, excludeDir?: string): Array<{ absPath: string; archiveName: string }> {
+  const result: Array<{ absPath: string; archiveName: string }> = [];
+  if (!fs.existsSync(dir)) return result;
+  for (const child of fs.readdirSync(dir)) {
+    const childPath = path.join(dir, child);
+    if (excludeDir && childPath === excludeDir) continue;
+    const stat = fs.statSync(childPath);
+    if (stat.isDirectory()) {
+      result.push(...walkFiles(childPath, `${basePath}/${child}`));
+    } else {
+      result.push({ absPath: childPath, archiveName: `${basePath}/${child}` });
+    }
+  }
+  return result;
 }
 
 export const backupService = {
@@ -107,10 +142,115 @@ export const backupService = {
     await archive.finalize();
   },
 
-  async importBackup(zipBuffer: Buffer): Promise<RestoreResult> {
+  async exportBackupToFile(
+    options: ExportOptions & { onProgress?: ProgressCallback },
+  ): Promise<{ filePath: string; filename: string }> {
+    const { includePosters = true, onProgress } = options;
+    const DB_TABLES = 11;
+
+    const report = (p: Partial<ExportProgress> & { phase: ExportProgress['phase'] }) => {
+      onProgress?.({
+        message: '',
+        current: 0,
+        total: 0,
+        percentage: 0,
+        ...p,
+      });
+    };
+
+    // ── 阶段 1：查询数据库 ──
+    report({ phase: 'db', message: '正在查询数据库...', current: 0, total: DB_TABLES, percentage: 0 });
+
+    const queryTable = async <T>(fn: () => Promise<T>, idx: number, name: string): Promise<T> => {
+      const result = await fn();
+      report({
+        phase: 'db',
+        message: `已查询 ${name}`,
+        current: idx + 1,
+        total: DB_TABLES,
+        percentage: Math.round(((idx + 1) / DB_TABLES) * 30),
+      });
+      return result;
+    };
+
+    const users = await queryTable(() => prisma.user.findMany({
+      select: { id: true, username: true, passwordHash: true, role: true, avatar: true, isActive: true, createdAt: true, updatedAt: true },
+    }), 0, 'users');
+    const categories = await queryTable(() => prisma.category.findMany(), 1, 'categories');
+    const tags = await queryTable(() => prisma.tag.findMany(), 2, 'tags');
+    const media = await queryTable(() => prisma.media.findMany(), 3, 'media');
+    const mediaTags = await queryTable(() => prisma.mediaTag.findMany(), 4, 'mediaTags');
+    const favorites = await queryTable(() => prisma.favorite.findMany(), 5, 'favorites');
+    const playlists = await queryTable(() => prisma.playlist.findMany(), 6, 'playlists');
+    const playlistItems = await queryTable(() => prisma.playlistItem.findMany(), 7, 'playlistItems');
+    const watchHistory = await queryTable(() => prisma.watchHistory.findMany(), 8, 'watchHistory');
+    const importLogs = await queryTable(() => prisma.importLog.findMany(), 9, 'importLogs');
+    const rawSystemSettings = await queryTable(() => prisma.systemSetting.findMany(), 10, 'systemSettings');
+
+    const systemSettings = rawSystemSettings.filter(setting => setting.key !== 'enableRateLimit');
+
+    const backupData = {
+      version: '1.0',
+      exportedAt: new Date().toISOString(),
+      tables: { users, categories, tags, media, mediaTags, favorites, playlists, playlistItems, watchHistory, importLogs, systemSettings },
+    };
+
+    // ── 阶段 2：打包文件 ──
+    const excludeDir = includePosters ? undefined : path.join(uploadsDir, 'posters');
+    const files = walkFiles(uploadsDir, 'uploads', excludeDir);
+    const totalFiles = files.length;
+
+    report({ phase: 'files', message: `正在打包文件 (共 ${totalFiles} 个)...`, current: 0, total: totalFiles, percentage: 30 });
+
+    const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+    const filename = `backup-${timestamp}.zip`;
+    const filePath = path.join(os.tmpdir(), `m3u8-backup-${Date.now()}.zip`);
+    const output = fs.createWriteStream(filePath);
+    const archive = archiver('zip', { zlib: { level: 6 } });
+
+    const archiveReady = new Promise<void>((resolve, reject) => {
+      output.on('close', resolve);
+      archive.on('error', reject);
+    });
+
+    archive.pipe(output);
+    archive.append(JSON.stringify(backupData, null, 2), { name: 'backup.json' });
+
+    let filesDone = 0;
+    for (const file of files) {
+      archive.file(file.absPath, { name: file.archiveName });
+      filesDone++;
+      if (filesDone % 20 === 0 || filesDone === totalFiles) {
+        report({
+          phase: 'files',
+          message: `正在打包文件 (${filesDone}/${totalFiles})`,
+          current: filesDone,
+          total: totalFiles,
+          percentage: 30 + Math.round((filesDone / Math.max(totalFiles, 1)) * 60),
+        });
+      }
+    }
+
+    // ── 阶段 3：完成打包 ──
+    report({ phase: 'finalize', message: '正在压缩并写入文件...', current: 0, total: 0, percentage: 90 });
+    await archive.finalize();
+    await archiveReady;
+
+    report({ phase: 'complete', message: '打包完成', current: 1, total: 1, percentage: 100 });
+
+    return { filePath, filename };
+  },
+
+  async importBackup(zipBuffer: Buffer, onProgress?: (p: BackupProgress) => void): Promise<RestoreResult> {
     const startTime = Date.now();
 
-    // 解析 ZIP
+    const report = (p: Partial<BackupProgress> & { phase: BackupProgress['phase'] }) => {
+      onProgress?.({ message: '', current: 0, total: 0, percentage: 0, ...p });
+    };
+
+    // ── 阶段：解析 ZIP ──
+    report({ phase: 'parse', message: '正在解析 ZIP 文件...', percentage: 0 });
+
     let zip: AdmZip;
     try {
       zip = new AdmZip(zipBuffer);
@@ -240,81 +380,75 @@ export const backupService = {
       .map((s: unknown) => pickFields<{ key: string; value: string }>(s, SYSTEM_SETTING_FIELDS))
       .filter((s: Record<string, unknown>) => typeof s.key === 'string' && ALLOWED_SETTING_KEYS.has(s.key as string));
 
+    report({ phase: 'parse', message: '数据校验完成', percentage: 5 });
+
     let totalRecords = 0;
+    const DELETE_TABLES = 12;
+    const WRITE_TABLES = 11;
 
-    // 在事务中执行清空 + 写入
+    // ── 阶段：删除 + 写入（事务） ──
+    report({ phase: 'delete', message: '正在清空现有数据...', current: 0, total: DELETE_TABLES, percentage: 5 });
+
     await prisma.$transaction(async (tx) => {
-      // 删除阶段（逆外键依赖顺序）
-      await tx.playlistItem.deleteMany();
-      await tx.watchHistory.deleteMany();
-      await tx.favorite.deleteMany();
-      await tx.mediaTag.deleteMany();
-      await tx.playlist.deleteMany();
-      await tx.importLog.deleteMany();
-      await tx.media.deleteMany();
-      await tx.tag.deleteMany();
-      await tx.category.deleteMany();
-      await tx.systemSetting.deleteMany();
-      await tx.refreshToken.deleteMany();
-      await tx.user.deleteMany();
+      let delIdx = 0;
+      const del = async (fn: () => Promise<unknown>, name: string) => {
+        await fn();
+        delIdx++;
+        report({
+          phase: 'delete',
+          message: `已清空 ${name}`,
+          current: delIdx,
+          total: DELETE_TABLES,
+          percentage: 5 + Math.round((delIdx / DELETE_TABLES) * 15),
+        });
+      };
 
-      // 写入阶段（正序，先写无依赖的表）
-      if (sanitizedUsers.length > 0) {
-        await tx.user.createMany({ data: sanitizedUsers as never });
-        totalRecords += sanitizedUsers.length;
-      }
+      await del(() => tx.playlistItem.deleteMany(), 'playlistItems');
+      await del(() => tx.watchHistory.deleteMany(), 'watchHistory');
+      await del(() => tx.favorite.deleteMany(), 'favorites');
+      await del(() => tx.mediaTag.deleteMany(), 'mediaTags');
+      await del(() => tx.playlist.deleteMany(), 'playlists');
+      await del(() => tx.importLog.deleteMany(), 'importLogs');
+      await del(() => tx.media.deleteMany(), 'media');
+      await del(() => tx.tag.deleteMany(), 'tags');
+      await del(() => tx.category.deleteMany(), 'categories');
+      await del(() => tx.systemSetting.deleteMany(), 'systemSettings');
+      await del(() => tx.refreshToken.deleteMany(), 'refreshTokens');
+      await del(() => tx.user.deleteMany(), 'users');
 
-      if (sanitizedCategories.length > 0) {
-        await tx.category.createMany({ data: sanitizedCategories as never });
-        totalRecords += sanitizedCategories.length;
-      }
+      // ── 写入阶段 ──
+      report({ phase: 'write', message: '正在写入数据...', current: 0, total: WRITE_TABLES, percentage: 20 });
 
-      if (sanitizedTags.length > 0) {
-        await tx.tag.createMany({ data: sanitizedTags as never });
-        totalRecords += sanitizedTags.length;
-      }
-
-      if (sanitizedMedia.length > 0) {
-        await tx.media.createMany({ data: sanitizedMedia as never });
-        totalRecords += sanitizedMedia.length;
-      }
-
-      if (sanitizedMediaTags.length > 0) {
-        await tx.mediaTag.createMany({ data: sanitizedMediaTags as never });
-        totalRecords += sanitizedMediaTags.length;
-      }
-
-      if (sanitizedFavorites.length > 0) {
-        await tx.favorite.createMany({ data: sanitizedFavorites as never });
-        totalRecords += sanitizedFavorites.length;
-      }
-
-      if (sanitizedPlaylists.length > 0) {
-        await tx.playlist.createMany({ data: sanitizedPlaylists as never });
-        totalRecords += sanitizedPlaylists.length;
-      }
-
-      if (sanitizedPlaylistItems.length > 0) {
-        await tx.playlistItem.createMany({ data: sanitizedPlaylistItems as never });
-        totalRecords += sanitizedPlaylistItems.length;
-      }
-
-      if (sanitizedWatchHistory.length > 0) {
-        await tx.watchHistory.createMany({ data: sanitizedWatchHistory as never });
-        totalRecords += sanitizedWatchHistory.length;
-      }
-
-      if (sanitizedImportLogs.length > 0) {
-        await tx.importLog.createMany({ data: sanitizedImportLogs as never });
-        totalRecords += sanitizedImportLogs.length;
-      }
-
-      // systemSettings 使用 upsert（主键为 key 字符串）
-      for (const setting of sanitizedSystemSettings) {
-        if (setting.key === 'enableRateLimit') {
-          continue;
+      let writeIdx = 0;
+      const writeTable = async (fn: () => Promise<unknown>, name: string, count: number) => {
+        if (count > 0) {
+          await fn();
+          totalRecords += count;
         }
+        writeIdx++;
+        report({
+          phase: 'write',
+          message: `已写入 ${name} (${count} 条)`,
+          current: writeIdx,
+          total: WRITE_TABLES,
+          percentage: 20 + Math.round((writeIdx / WRITE_TABLES) * 55),
+        });
+      };
 
+      await writeTable(() => tx.user.createMany({ data: sanitizedUsers as never }), 'users', sanitizedUsers.length);
+      await writeTable(() => tx.category.createMany({ data: sanitizedCategories as never }), 'categories', sanitizedCategories.length);
+      await writeTable(() => tx.tag.createMany({ data: sanitizedTags as never }), 'tags', sanitizedTags.length);
+      await writeTable(() => tx.media.createMany({ data: sanitizedMedia as never }), 'media', sanitizedMedia.length);
+      await writeTable(() => tx.mediaTag.createMany({ data: sanitizedMediaTags as never }), 'mediaTags', sanitizedMediaTags.length);
+      await writeTable(() => tx.favorite.createMany({ data: sanitizedFavorites as never }), 'favorites', sanitizedFavorites.length);
+      await writeTable(() => tx.playlist.createMany({ data: sanitizedPlaylists as never }), 'playlists', sanitizedPlaylists.length);
+      await writeTable(() => tx.playlistItem.createMany({ data: sanitizedPlaylistItems as never }), 'playlistItems', sanitizedPlaylistItems.length);
+      await writeTable(() => tx.watchHistory.createMany({ data: sanitizedWatchHistory as never }), 'watchHistory', sanitizedWatchHistory.length);
+      await writeTable(() => tx.importLog.createMany({ data: sanitizedImportLogs as never }), 'importLogs', sanitizedImportLogs.length);
+
+      // systemSettings 使用 upsert
+      for (const setting of sanitizedSystemSettings) {
+        if (setting.key === 'enableRateLimit') continue;
         await tx.systemSetting.upsert({
           where: { key: setting.key as string },
           update: { value: setting.value as string },
@@ -322,13 +456,14 @@ export const backupService = {
         });
         totalRecords++;
       }
-
       await tx.systemSetting.upsert({
         where: { key: 'enableRateLimit' },
         update: { value: 'true' },
         create: { key: 'enableRateLimit', value: 'true' },
       });
       totalRecords++;
+      writeIdx++;
+      report({ phase: 'write', message: '已写入 systemSettings', current: WRITE_TABLES, total: WRITE_TABLES, percentage: 75 });
     }, { timeout: 60000 });
 
     // 事务成功后恢复上传文件（文件系统不支持事务）
@@ -336,6 +471,9 @@ export const backupService = {
     const uploadEntries = zip.getEntries().filter(
       (e) => e.entryName.startsWith('uploads/') && !e.isDirectory,
     );
+    const totalUploadFiles = uploadEntries.length;
+
+    report({ phase: 'files', message: `正在恢复文件 (共 ${totalUploadFiles} 个)...`, current: 0, total: totalUploadFiles, percentage: 75 });
 
     if (uploadEntries.length > 0) {
       // 清空 uploads 目录内容（仅删除子项，保留目录本身，避免 Docker 卷挂载点无法删除的问题）
@@ -376,6 +514,15 @@ export const backupService = {
         }
         fs.writeFileSync(targetPath, entry.getData());
         uploadsRestored++;
+        if (uploadsRestored % 20 === 0 || uploadsRestored === totalUploadFiles) {
+          report({
+            phase: 'files',
+            message: `正在恢复文件 (${uploadsRestored}/${totalUploadFiles})`,
+            current: uploadsRestored,
+            total: totalUploadFiles,
+            percentage: 75 + Math.round((uploadsRestored / Math.max(totalUploadFiles, 1)) * 20),
+          });
+        }
       }
     }
 
@@ -385,11 +532,15 @@ export const backupService = {
       (t) => tables[t] && tables[t].length > 0,
     ).length;
 
-    return {
+    const result: RestoreResult = {
       tablesRestored,
       totalRecords,
       uploadsRestored,
       duration: Math.round((Date.now() - startTime) / 1000),
     };
+
+    report({ phase: 'complete', message: '恢复完成', current: 1, total: 1, percentage: 100, result });
+
+    return result;
   },
 };

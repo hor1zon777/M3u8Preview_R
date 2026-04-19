@@ -1,5 +1,6 @@
 import api from './api.js';
-import type { ApiResponse, DashboardStats, PaginatedResponse, RestoreResult, BatchOperationResult, LoginRecord, UserActivitySummary, UserActivityAggregate, WatchHistory } from '@m3u8-preview/shared';
+import { getAccessToken } from './api.js';
+import type { ApiResponse, DashboardStats, PaginatedResponse, RestoreResult, BatchOperationResult, LoginRecord, UserActivitySummary, UserActivityAggregate, WatchHistory, ExportProgress, BackupProgress } from '@m3u8-preview/shared';
 
 export const adminApi = {
   async getDashboard() {
@@ -46,12 +47,79 @@ export const adminApi = {
     });
     const blob = response.data as Blob;
 
-    // 从 Content-Disposition 提取文件名
     const disposition = response.headers['content-disposition'];
     const match = disposition?.match(/filename="?([^";\n]+)"?/);
     const filename = match?.[1] || `backup-${new Date().toISOString().slice(0, 19)}.zip`;
 
-    // 创建临时 <a> 标签触发下载
+    const blobUrl = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = blobUrl;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(blobUrl);
+  },
+
+  exportBackupWithProgress(
+    options: { includePosters?: boolean },
+    onProgress: (progress: ExportProgress) => void,
+  ): { abort: () => void } {
+    const params = new URLSearchParams();
+    if (options.includePosters === false) {
+      params.set('includePosters', 'false');
+    }
+    const token = getAccessToken();
+    if (token) {
+      params.set('token', token);
+    }
+    const query = params.toString();
+    const url = `/api/v1/admin/backup/export/stream${query ? `?${query}` : ''}`;
+
+    const eventSource = new EventSource(url);
+
+    eventSource.onmessage = (event) => {
+      try {
+        const data = JSON.parse(event.data) as ExportProgress;
+        onProgress(data);
+
+        if (data.phase === 'complete' && data.downloadId) {
+          eventSource.close();
+          adminApi.downloadBackupFile(data.downloadId);
+        }
+        if (data.phase === 'error') {
+          eventSource.close();
+        }
+      } catch { /* ignore parse errors */ }
+    };
+
+    eventSource.onerror = () => {
+      eventSource.close();
+      onProgress({
+        phase: 'error',
+        message: '连接中断',
+        current: 0,
+        total: 0,
+        percentage: 0,
+      });
+    };
+
+    return {
+      abort: () => eventSource.close(),
+    };
+  },
+
+  async downloadBackupFile(downloadId: string) {
+    const response = await api.get(`/admin/backup/download/${downloadId}`, {
+      responseType: 'blob',
+      timeout: 300000,
+    });
+    const blob = response.data as Blob;
+
+    const disposition = response.headers['content-disposition'];
+    const match = disposition?.match(/filename="?([^";\n]+)"?/);
+    const filename = match?.[1] || `backup-${new Date().toISOString().slice(0, 19)}.zip`;
+
     const blobUrl = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = blobUrl;
@@ -69,6 +137,86 @@ export const adminApi = {
       timeout: 300000,
     });
     return data.data!;
+  },
+
+  importBackupWithProgress(
+    file: File,
+    onProgress: (progress: BackupProgress) => void,
+  ): { abort: () => void } {
+    const abortController = new AbortController();
+    let eventSource: EventSource | null = null;
+
+    const run = async () => {
+      try {
+        // 阶段 1：上传文件（0-20%）
+        onProgress({ phase: 'upload', message: '正在上传文件...', current: 0, total: 100, percentage: 0 });
+
+        const formData = new FormData();
+        formData.append('file', file);
+
+        const { data } = await api.post<ApiResponse<{ restoreId: string }>>(
+          '/admin/backup/import/upload',
+          formData,
+          {
+            timeout: 300000,
+            signal: abortController.signal,
+            onUploadProgress: (e) => {
+              const pct = e.total ? Math.round((e.loaded / e.total) * 20) : 0;
+              onProgress({
+                phase: 'upload',
+                message: `正在上传文件...`,
+                current: e.loaded,
+                total: e.total || 0,
+                percentage: pct,
+              });
+            },
+          },
+        );
+
+        const restoreId = data.data!.restoreId;
+
+        // 阶段 2：SSE 恢复进度（20-100%）
+        const token = getAccessToken();
+        const params = new URLSearchParams();
+        if (token) params.set('token', token);
+        const query = params.toString();
+        const url = `/api/v1/admin/backup/import/stream/${restoreId}${query ? `?${query}` : ''}`;
+
+        eventSource = new EventSource(url);
+
+        eventSource.onmessage = (event) => {
+          try {
+            const p = JSON.parse(event.data) as BackupProgress;
+            onProgress(p);
+            if (p.phase === 'complete' || p.phase === 'error') {
+              eventSource?.close();
+              eventSource = null;
+            }
+          } catch { /* ignore */ }
+        };
+
+        eventSource.onerror = () => {
+          eventSource?.close();
+          eventSource = null;
+          onProgress({ phase: 'error', message: '连接中断', current: 0, total: 0, percentage: 0 });
+        };
+      } catch (err: any) {
+        if (err.name !== 'CanceledError' && err.name !== 'AbortError') {
+          const msg = err.response?.data?.message || err.message || '上传失败';
+          onProgress({ phase: 'error', message: msg, current: 0, total: 0, percentage: 0 });
+        }
+      }
+    };
+
+    run();
+
+    return {
+      abort: () => {
+        abortController.abort();
+        eventSource?.close();
+        eventSource = null;
+      },
+    };
   },
 
   async batchDeleteMedia(ids: string[]): Promise<BatchOperationResult> {

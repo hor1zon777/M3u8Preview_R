@@ -41,7 +41,11 @@ router.post('/posters/retry', adminController.retryFailedPosters);
 
 // Backup management
 router.get('/backup/export', backupController.exportBackup);
+router.get('/backup/export/stream', backupController.exportBackupStream);
+router.get('/backup/download/:id', backupController.downloadBackup);
 router.post('/backup/import', backupUpload, backupController.importBackup);
+router.post('/backup/import/upload', backupUpload, backupController.uploadBackupFile);
+router.get('/backup/import/stream/:id', backupController.importBackupStream);
 
 // User activity (全局聚合)
 router.get('/activity', adminUserActivityController.getActivityAggregate);

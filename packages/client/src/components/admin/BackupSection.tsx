@@ -1,44 +1,117 @@
-import { useState, useRef } from 'react';
-import { useMutation } from '@tanstack/react-query';
-import { Archive, Download, Upload, AlertTriangle, CheckCircle } from 'lucide-react';
+import { useState, useRef, useCallback } from 'react';
+import { Archive, Download, Upload, AlertTriangle, CheckCircle, Database, FolderArchive, PackageCheck, Loader2, Trash2, HardDriveUpload, PenLine } from 'lucide-react';
 import { adminApi } from '../../services/adminApi.js';
-import type { RestoreResult } from '@m3u8-preview/shared';
+import type { RestoreResult, ExportProgress, BackupProgress } from '@m3u8-preview/shared';
+
+const PHASE_LABELS: Record<string, string> = {
+  db: '查询数据库',
+  files: '打包文件',
+  finalize: '压缩写入',
+  complete: '打包完成',
+  error: '操作失败',
+  upload: '上传文件',
+  parse: '解析校验',
+  delete: '清空数据',
+  write: '写入数据',
+};
+
+const PHASE_ICONS: Record<string, typeof Database> = {
+  db: Database,
+  files: FolderArchive,
+  finalize: PackageCheck,
+  complete: CheckCircle,
+  upload: HardDriveUpload,
+  parse: PenLine,
+  delete: Trash2,
+  write: Database,
+};
 
 export function BackupSection() {
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [showConfirm, setShowConfirm] = useState(false);
   const [restoreResult, setRestoreResult] = useState<RestoreResult | null>(null);
   const [includePosters, setIncludePosters] = useState(true);
+  const [exportProgress, setExportProgress] = useState<ExportProgress | null>(null);
+  const [isExporting, setIsExporting] = useState(false);
+  const [restoreProgress, setRestoreProgress] = useState<BackupProgress | null>(null);
+  const [isRestoring, setIsRestoring] = useState(false);
+  const [restoreError, setRestoreError] = useState<string | null>(null);
+  const abortRef = useRef<(() => void) | null>(null);
+  const restoreAbortRef = useRef<(() => void) | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const exportMutation = useMutation({
-    mutationFn: () => adminApi.exportBackup({ includePosters }),
-  });
+  const startExport = useCallback(() => {
+    setIsExporting(true);
+    setExportProgress({ phase: 'db', message: '准备中...', current: 0, total: 0, percentage: 0 });
 
-  const importMutation = useMutation({
-    mutationFn: (file: File) => adminApi.importBackup(file),
-    onSuccess: (result) => {
-      setRestoreResult(result);
-      setSelectedFile(null);
-      setShowConfirm(false);
-      if (fileInputRef.current) {
-        fileInputRef.current.value = '';
-      }
-    },
-    onError: () => {
-      setShowConfirm(false);
-    },
-  });
+    const { abort } = adminApi.exportBackupWithProgress(
+      { includePosters },
+      (progress) => {
+        setExportProgress(progress);
+        if (progress.phase === 'complete' || progress.phase === 'error') {
+          setIsExporting(false);
+          abortRef.current = null;
+          if (progress.phase === 'complete') {
+            setTimeout(() => setExportProgress(null), 3000);
+          }
+        }
+      },
+    );
+    abortRef.current = abort;
+  }, [includePosters]);
+
+  const cancelExport = useCallback(() => {
+    abortRef.current?.();
+    abortRef.current = null;
+    setIsExporting(false);
+    setExportProgress(null);
+  }, []);
+
+  const startRestore = useCallback(() => {
+    if (!selectedFile) return;
+    setIsRestoring(true);
+    setRestoreResult(null);
+    setRestoreError(null);
+    setRestoreProgress({ phase: 'upload', message: '准备上传...', current: 0, total: 0, percentage: 0 });
+    setShowConfirm(false);
+
+    const { abort } = adminApi.importBackupWithProgress(
+      selectedFile,
+      (progress) => {
+        setRestoreProgress(progress);
+        if (progress.phase === 'complete') {
+          setIsRestoring(false);
+          restoreAbortRef.current = null;
+          if (progress.result) {
+            setRestoreResult(progress.result);
+          }
+          setSelectedFile(null);
+          if (fileInputRef.current) fileInputRef.current.value = '';
+          setTimeout(() => setRestoreProgress(null), 3000);
+        }
+        if (progress.phase === 'error') {
+          setIsRestoring(false);
+          restoreAbortRef.current = null;
+          setRestoreError(progress.message);
+        }
+      },
+    );
+    restoreAbortRef.current = abort;
+  }, [selectedFile]);
+
+  const cancelRestore = useCallback(() => {
+    restoreAbortRef.current?.();
+    restoreAbortRef.current = null;
+    setIsRestoring(false);
+    setRestoreProgress(null);
+  }, []);
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0] || null;
     setSelectedFile(file);
     setRestoreResult(null);
-  };
-
-  const handleRestore = () => {
-    if (!selectedFile) return;
-    importMutation.mutate(selectedFile);
+    setRestoreError(null);
+    setRestoreProgress(null);
   };
 
   const formatFileSize = (bytes: number) => {
@@ -46,6 +119,9 @@ export function BackupSection() {
     if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
     return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
   };
+
+  const ExportIcon = exportProgress ? (PHASE_ICONS[exportProgress.phase] || Loader2) : null;
+  const RestoreIcon = restoreProgress ? (PHASE_ICONS[restoreProgress.phase] || Loader2) : null;
 
   return (
     <div className="bg-emby-bg-card border border-emby-border-subtle rounded-md p-5">
@@ -65,22 +141,73 @@ export function BackupSection() {
             type="checkbox"
             checked={includePosters}
             onChange={(e) => setIncludePosters(e.target.checked)}
+            disabled={isExporting}
             className="w-4 h-4 rounded border-emby-border-subtle bg-emby-bg-input text-emby-green focus:ring-emby-green focus:ring-offset-0"
           />
           <span className="text-emby-text-secondary text-sm">包含封面图片</span>
           <span className="text-emby-text-muted text-xs">（不勾选可显著减小备份体积）</span>
         </label>
-        <button
-          onClick={() => exportMutation.mutate()}
-          disabled={exportMutation.isPending}
-          className="mt-3 inline-flex items-center gap-2 px-4 py-2 bg-emby-green hover:bg-emby-green-light text-white text-sm font-medium rounded transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-        >
-          <Download className="w-4 h-4" />
-          {exportMutation.isPending ? '正在打包备份...' : '下载备份文件'}
-        </button>
-        {exportMutation.isError && (
+
+        <div className="mt-3 flex items-center gap-2">
+          <button
+            onClick={startExport}
+            disabled={isExporting}
+            className="inline-flex items-center gap-2 px-4 py-2 bg-emby-green hover:bg-emby-green-light text-white text-sm font-medium rounded transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            <Download className="w-4 h-4" />
+            {isExporting ? '正在打包...' : '下载备份文件'}
+          </button>
+          {isExporting && (
+            <button
+              onClick={cancelExport}
+              className="px-3 py-2 text-emby-text-muted hover:text-white text-sm transition-colors"
+            >
+              取消
+            </button>
+          )}
+        </div>
+
+        {/* 进度条 */}
+        {exportProgress && exportProgress.phase !== 'error' && (
+          <div className="mt-3 space-y-2">
+            <div className="flex items-center gap-2 text-sm">
+              {ExportIcon && (
+                <ExportIcon className={`w-4 h-4 ${
+                  exportProgress.phase === 'complete' ? 'text-green-400' : 'text-emby-green animate-pulse'
+                }`} />
+              )}
+              <span className="text-emby-text-secondary">
+                {PHASE_LABELS[exportProgress.phase] || exportProgress.phase}
+              </span>
+              <span className="text-emby-text-muted text-xs">
+                {exportProgress.message}
+              </span>
+            </div>
+            <div className="relative h-2 bg-emby-bg-input rounded-full overflow-hidden">
+              <div
+                className={`absolute inset-y-0 left-0 rounded-full transition-all duration-300 ease-out ${
+                  exportProgress.phase === 'complete'
+                    ? 'bg-green-500'
+                    : 'bg-emby-green'
+                }`}
+                style={{ width: `${exportProgress.percentage}%` }}
+              />
+            </div>
+            <div className="flex justify-between text-xs text-emby-text-muted">
+              <span>
+                {exportProgress.total > 0
+                  ? `${exportProgress.current} / ${exportProgress.total}`
+                  : ''}
+              </span>
+              <span>{exportProgress.percentage}%</span>
+            </div>
+          </div>
+        )}
+
+        {/* 导出错误 */}
+        {exportProgress?.phase === 'error' && (
           <p className="text-red-400 text-xs mt-2">
-            导出失败: {(exportMutation.error as Error)?.message || '未知错误'}
+            导出失败: {exportProgress.message}
           </p>
         )}
       </div>
@@ -95,7 +222,7 @@ export function BackupSection() {
         </p>
 
         <div className="mt-3 flex items-center gap-3">
-          <label className="inline-flex items-center gap-2 px-4 py-2 bg-emby-bg-input hover:bg-emby-border-subtle text-emby-text-secondary text-sm font-medium rounded transition-colors cursor-pointer">
+          <label className={`inline-flex items-center gap-2 px-4 py-2 bg-emby-bg-input hover:bg-emby-border-subtle text-emby-text-secondary text-sm font-medium rounded transition-colors ${isRestoring ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}`}>
             <Upload className="w-4 h-4" />
             选择备份文件
             <input
@@ -103,28 +230,28 @@ export function BackupSection() {
               type="file"
               accept=".zip"
               className="hidden"
+              disabled={isRestoring}
               onChange={handleFileChange}
             />
           </label>
-          {selectedFile && (
+          {selectedFile && !isRestoring && (
             <span className="text-emby-text-muted text-xs">
               已选: {selectedFile.name} ({formatFileSize(selectedFile.size)})
             </span>
           )}
         </div>
 
-        {selectedFile && !showConfirm && (
+        {selectedFile && !showConfirm && !isRestoring && (
           <button
             onClick={() => setShowConfirm(true)}
-            disabled={importMutation.isPending}
-            className="mt-3 inline-flex items-center gap-2 px-4 py-2 bg-amber-600 hover:bg-amber-500 text-white text-sm font-medium rounded transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            className="mt-3 inline-flex items-center gap-2 px-4 py-2 bg-amber-600 hover:bg-amber-500 text-white text-sm font-medium rounded transition-colors"
           >
             开始恢复
           </button>
         )}
 
         {/* 确认警告框 */}
-        {showConfirm && (
+        {showConfirm && !isRestoring && (
           <div className="mt-3 p-4 bg-amber-900/30 border border-amber-700/50 rounded">
             <div className="flex items-start gap-2">
               <AlertTriangle className="w-5 h-5 text-amber-400 flex-shrink-0 mt-0.5" />
@@ -135,17 +262,15 @@ export function BackupSection() {
                 <div className="flex gap-2 mt-3">
                   <button
                     onClick={() => setShowConfirm(false)}
-                    disabled={importMutation.isPending}
-                    className="px-3 py-1.5 bg-emby-bg-input hover:bg-emby-border-subtle text-emby-text-secondary text-sm rounded transition-colors disabled:opacity-50"
+                    className="px-3 py-1.5 bg-emby-bg-input hover:bg-emby-border-subtle text-emby-text-secondary text-sm rounded transition-colors"
                   >
                     取消
                   </button>
                   <button
-                    onClick={handleRestore}
-                    disabled={importMutation.isPending}
-                    className="px-3 py-1.5 bg-red-600 hover:bg-red-500 text-white text-sm font-medium rounded transition-colors disabled:opacity-50"
+                    onClick={startRestore}
+                    className="px-3 py-1.5 bg-red-600 hover:bg-red-500 text-white text-sm font-medium rounded transition-colors"
                   >
-                    {importMutation.isPending ? '正在恢复...' : '确认恢复'}
+                    确认恢复
                   </button>
                 </div>
               </div>
@@ -153,11 +278,56 @@ export function BackupSection() {
           </div>
         )}
 
-        {/* 导入错误 */}
-        {importMutation.isError && (
+        {/* 恢复进度条 */}
+        {restoreProgress && restoreProgress.phase !== 'error' && (
+          <div className="mt-3 space-y-2">
+            <div className="flex items-center gap-2 text-sm">
+              {RestoreIcon && (
+                <RestoreIcon className={`w-4 h-4 ${
+                  restoreProgress.phase === 'complete' ? 'text-green-400' : 'text-amber-400 animate-pulse'
+                }`} />
+              )}
+              <span className="text-emby-text-secondary">
+                {PHASE_LABELS[restoreProgress.phase] || restoreProgress.phase}
+              </span>
+              <span className="text-emby-text-muted text-xs">
+                {restoreProgress.message}
+              </span>
+            </div>
+            <div className="relative h-2 bg-emby-bg-input rounded-full overflow-hidden">
+              <div
+                className={`absolute inset-y-0 left-0 rounded-full transition-all duration-300 ease-out ${
+                  restoreProgress.phase === 'complete'
+                    ? 'bg-green-500'
+                    : 'bg-amber-500'
+                }`}
+                style={{ width: `${restoreProgress.percentage}%` }}
+              />
+            </div>
+            <div className="flex justify-between text-xs text-emby-text-muted">
+              <span>
+                {restoreProgress.total > 0 && restoreProgress.phase !== 'upload'
+                  ? `${restoreProgress.current} / ${restoreProgress.total}`
+                  : ''}
+              </span>
+              <span>{restoreProgress.percentage}%</span>
+            </div>
+            {isRestoring && (
+              <button
+                onClick={cancelRestore}
+                className="text-emby-text-muted hover:text-white text-xs transition-colors"
+              >
+                取消
+              </button>
+            )}
+          </div>
+        )}
+
+        {/* 恢复错误 */}
+        {(restoreError || restoreProgress?.phase === 'error') && (
           <div className="mt-3 p-3 bg-red-900/30 border border-red-700/50 rounded">
             <p className="text-red-400 text-sm">
-              恢复失败: {(importMutation.error as any)?.response?.data?.message || (importMutation.error as Error)?.message || '未知错误'}
+              恢复失败: {restoreError || restoreProgress?.message || '未知错误'}
             </p>
           </div>
         )}

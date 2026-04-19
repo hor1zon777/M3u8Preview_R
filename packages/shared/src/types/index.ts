@@ -298,6 +298,29 @@ export interface RestoreResult {
   duration: number;
 }
 
+export type ExportPhase = 'db' | 'files' | 'finalize' | 'complete' | 'error';
+
+export type BackupPhase = 'upload' | 'parse' | 'db' | 'delete' | 'write' | 'files' | 'finalize' | 'complete' | 'error';
+
+export interface ExportProgress {
+  phase: ExportPhase;
+  message: string;
+  current: number;
+  total: number;
+  percentage: number;
+  downloadId?: string;
+}
+
+export interface BackupProgress {
+  phase: BackupPhase;
+  message: string;
+  current: number;
+  total: number;
+  percentage: number;
+  downloadId?: string;
+  result?: RestoreResult;
+}
+
 // ========== Batch Operations ==========
 export interface BatchOperationResult {
   affectedCount: number;
