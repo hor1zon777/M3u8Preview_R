@@ -1,7 +1,64 @@
-import { useState, useRef, useCallback } from 'react';
+import { useState, useRef, useCallback, useEffect } from 'react';
 import { Archive, Download, Upload, AlertTriangle, CheckCircle, Database, FolderArchive, PackageCheck, Loader2, Trash2, HardDriveUpload, PenLine } from 'lucide-react';
 import { adminApi } from '../../services/adminApi.js';
 import type { RestoreResult, ExportProgress, BackupProgress } from '@m3u8-preview/shared';
+
+// ── 平滑进度 hook：确保每个阶段至少展示 MIN_PHASE_MS ──
+function useSmoothedProgress<T extends { phase: string; percentage: number }>(minPhaseMs = 500) {
+  const [display, setDisplay] = useState<T | null>(null);
+  const queueRef = useRef<T[]>([]);
+  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const displayPhaseRef = useRef<string | null>(null);
+
+  const drainNext = useCallback(() => {
+    timerRef.current = null;
+    if (queueRef.current.length === 0) return;
+
+    const next = queueRef.current.shift()!;
+    displayPhaseRef.current = next.phase;
+    setDisplay(next);
+
+    if (queueRef.current.length > 0) {
+      timerRef.current = setTimeout(drainNext, minPhaseMs);
+    }
+  }, [minPhaseMs]);
+
+  const push = useCallback((p: T) => {
+    if (p.phase === displayPhaseRef.current) {
+      setDisplay(p);
+      return;
+    }
+
+    const idx = queueRef.current.findIndex(q => q.phase === p.phase);
+    if (idx >= 0) {
+      queueRef.current[idx] = p;
+    } else {
+      queueRef.current.push(p);
+    }
+
+    if (!timerRef.current) {
+      if (displayPhaseRef.current === null) {
+        drainNext();
+      } else {
+        timerRef.current = setTimeout(drainNext, minPhaseMs);
+      }
+    }
+  }, [drainNext, minPhaseMs]);
+
+  const reset = useCallback(() => {
+    if (timerRef.current) clearTimeout(timerRef.current);
+    timerRef.current = null;
+    queueRef.current = [];
+    displayPhaseRef.current = null;
+    setDisplay(null);
+  }, []);
+
+  useEffect(() => () => {
+    if (timerRef.current) clearTimeout(timerRef.current);
+  }, []);
+
+  return { display, push, reset };
+}
 
 const PHASE_LABELS: Record<string, string> = {
   db: '查询数据库',
@@ -31,87 +88,108 @@ export function BackupSection() {
   const [showConfirm, setShowConfirm] = useState(false);
   const [restoreResult, setRestoreResult] = useState<RestoreResult | null>(null);
   const [includePosters, setIncludePosters] = useState(true);
-  const [exportProgress, setExportProgress] = useState<ExportProgress | null>(null);
   const [isExporting, setIsExporting] = useState(false);
-  const [restoreProgress, setRestoreProgress] = useState<BackupProgress | null>(null);
   const [isRestoring, setIsRestoring] = useState(false);
   const [restoreError, setRestoreError] = useState<string | null>(null);
   const abortRef = useRef<(() => void) | null>(null);
   const restoreAbortRef = useRef<(() => void) | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const pendingRestoreResultRef = useRef<RestoreResult | null>(null);
+
+  const exportSmooth = useSmoothedProgress<ExportProgress>(500);
+  const restoreSmooth = useSmoothedProgress<BackupProgress>(500);
+
+  // 导出完成时：触发下载已在 SSE 回调中处理，这里处理 UI 收尾
+  useEffect(() => {
+    if (exportSmooth.display?.phase === 'complete') {
+      setIsExporting(false);
+      abortRef.current = null;
+      const t = setTimeout(() => exportSmooth.reset(), 3000);
+      return () => clearTimeout(t);
+    }
+    if (exportSmooth.display?.phase === 'error') {
+      setIsExporting(false);
+      abortRef.current = null;
+    }
+  }, [exportSmooth.display?.phase]);
+
+  // 恢复完成时：处理 UI 收尾
+  useEffect(() => {
+    if (restoreSmooth.display?.phase === 'complete') {
+      setIsRestoring(false);
+      restoreAbortRef.current = null;
+      if (pendingRestoreResultRef.current) {
+        setRestoreResult(pendingRestoreResultRef.current);
+        pendingRestoreResultRef.current = null;
+      }
+      setSelectedFile(null);
+      if (fileInputRef.current) fileInputRef.current.value = '';
+      const t = setTimeout(() => restoreSmooth.reset(), 3000);
+      return () => clearTimeout(t);
+    }
+    if (restoreSmooth.display?.phase === 'error') {
+      setIsRestoring(false);
+      restoreAbortRef.current = null;
+      setRestoreError(restoreSmooth.display.message);
+    }
+  }, [restoreSmooth.display?.phase]);
 
   const startExport = useCallback(() => {
     setIsExporting(true);
-    setExportProgress({ phase: 'db', message: '准备中...', current: 0, total: 0, percentage: 0 });
+    exportSmooth.reset();
+    exportSmooth.push({ phase: 'db', message: '准备中...', current: 0, total: 0, percentage: 0 });
 
     const { abort } = adminApi.exportBackupWithProgress(
       { includePosters },
       (progress) => {
-        setExportProgress(progress);
-        if (progress.phase === 'complete' || progress.phase === 'error') {
-          setIsExporting(false);
-          abortRef.current = null;
-          if (progress.phase === 'complete') {
-            setTimeout(() => setExportProgress(null), 3000);
-          }
-        }
+        exportSmooth.push(progress);
       },
     );
     abortRef.current = abort;
-  }, [includePosters]);
+  }, [includePosters, exportSmooth]);
 
   const cancelExport = useCallback(() => {
     abortRef.current?.();
     abortRef.current = null;
     setIsExporting(false);
-    setExportProgress(null);
-  }, []);
+    exportSmooth.reset();
+  }, [exportSmooth]);
 
   const startRestore = useCallback(() => {
     if (!selectedFile) return;
     setIsRestoring(true);
     setRestoreResult(null);
     setRestoreError(null);
-    setRestoreProgress({ phase: 'upload', message: '准备上传...', current: 0, total: 0, percentage: 0 });
+    pendingRestoreResultRef.current = null;
+    restoreSmooth.reset();
+    restoreSmooth.push({ phase: 'upload', message: '准备上传...', current: 0, total: 0, percentage: 0 });
     setShowConfirm(false);
 
     const { abort } = adminApi.importBackupWithProgress(
       selectedFile,
       (progress) => {
-        setRestoreProgress(progress);
-        if (progress.phase === 'complete') {
-          setIsRestoring(false);
-          restoreAbortRef.current = null;
-          if (progress.result) {
-            setRestoreResult(progress.result);
-          }
-          setSelectedFile(null);
-          if (fileInputRef.current) fileInputRef.current.value = '';
-          setTimeout(() => setRestoreProgress(null), 3000);
+        if (progress.phase === 'complete' && progress.result) {
+          pendingRestoreResultRef.current = progress.result;
         }
-        if (progress.phase === 'error') {
-          setIsRestoring(false);
-          restoreAbortRef.current = null;
-          setRestoreError(progress.message);
-        }
+        restoreSmooth.push(progress);
       },
     );
     restoreAbortRef.current = abort;
-  }, [selectedFile]);
+  }, [selectedFile, restoreSmooth]);
 
   const cancelRestore = useCallback(() => {
     restoreAbortRef.current?.();
     restoreAbortRef.current = null;
     setIsRestoring(false);
-    setRestoreProgress(null);
-  }, []);
+    restoreSmooth.reset();
+  }, [restoreSmooth]);
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0] || null;
     setSelectedFile(file);
     setRestoreResult(null);
     setRestoreError(null);
-    setRestoreProgress(null);
+    restoreSmooth.reset();
   };
 
   const formatFileSize = (bytes: number) => {
@@ -120,6 +198,8 @@ export function BackupSection() {
     return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
   };
 
+  const exportProgress = exportSmooth.display;
+  const restoreProgress = restoreSmooth.display;
   const ExportIcon = exportProgress ? (PHASE_ICONS[exportProgress.phase] || Loader2) : null;
   const RestoreIcon = restoreProgress ? (PHASE_ICONS[restoreProgress.phase] || Loader2) : null;
 
