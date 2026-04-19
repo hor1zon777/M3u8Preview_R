@@ -1,6 +1,7 @@
 import { Request, Response, NextFunction } from 'express';
 import { AppError } from './errorHandler.js';
 import { verifyJwt } from '../utils/verifyJwt.js';
+import { consumeSseTicket } from '../utils/sseTicket.js';
 import type { TokenPayload } from '@m3u8-preview/shared';
 
 declare global {
@@ -13,13 +14,19 @@ declare global {
 
 export function authenticate(req: Request, _res: Response, next: NextFunction) {
   try {
-    const authHeader = req.headers.authorization;
-    let token = authHeader?.startsWith('Bearer ') ? authHeader.slice(7) : null;
-
-    // SSE/EventSource 不支持自定义 header，允许通过 query 传递 token
-    if (!token && typeof req.query.token === 'string') {
-      token = req.query.token;
+    // SSE/EventSource 不支持自定义 header，使用一次性 ticket 认证
+    if (typeof req.query.ticket === 'string') {
+      const payload = consumeSseTicket(req.query.ticket);
+      if (!payload) {
+        throw new AppError('Invalid or expired ticket', 401);
+      }
+      req.user = payload as TokenPayload;
+      next();
+      return;
     }
+
+    const authHeader = req.headers.authorization;
+    const token = authHeader?.startsWith('Bearer ') ? authHeader.slice(7) : null;
 
     if (!token) {
       throw new AppError('Authentication required', 401);

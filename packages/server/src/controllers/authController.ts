@@ -2,6 +2,7 @@ import { Request, Response, NextFunction } from 'express';
 import { authService } from '../services/authService.js';
 import { loginRecordService } from '../services/loginRecordService.js';
 import { getClientIp } from '../utils/getClientIp.js';
+import { createSseTicket } from '../utils/sseTicket.js';
 
 export const authController = {
   async register(req: Request, res: Response, next: NextFunction) {
@@ -126,6 +127,15 @@ export const authController = {
       });
 
       res.json({ success: true, message: '密码修改成功，请重新登录' });
+    } catch (error) {
+      next(error);
+    }
+  },
+
+  async sseTicket(req: Request, res: Response, next: NextFunction) {
+    try {
+      const ticket = createSseTicket(req.user!.userId, req.user!.role);
+      res.json({ success: true, data: { ticket } });
     } catch (error) {
       next(error);
     }

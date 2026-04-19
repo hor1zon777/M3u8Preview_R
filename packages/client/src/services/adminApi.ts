@@ -1,6 +1,10 @@
 import api from './api.js';
-import { getAccessToken } from './api.js';
 import type { ApiResponse, DashboardStats, PaginatedResponse, RestoreResult, BatchOperationResult, LoginRecord, UserActivitySummary, UserActivityAggregate, WatchHistory, ExportProgress, BackupProgress } from '@m3u8-preview/shared';
+
+async function getSseTicket(): Promise<string> {
+  const { data } = await api.post<ApiResponse<{ ticket: string }>>('/auth/sse-ticket');
+  return data.data!.ticket;
+}
 
 export const adminApi = {
   async getDashboard() {
@@ -69,43 +73,63 @@ export const adminApi = {
     if (options.includePosters === false) {
       params.set('includePosters', 'false');
     }
-    const token = getAccessToken();
-    if (token) {
-      params.set('token', token);
-    }
-    const query = params.toString();
-    const url = `/api/v1/admin/backup/export/stream${query ? `?${query}` : ''}`;
 
-    const eventSource = new EventSource(url);
+    let eventSource: EventSource | null = null;
+    let aborted = false;
 
-    eventSource.onmessage = (event) => {
+    const run = async () => {
       try {
-        const data = JSON.parse(event.data) as ExportProgress;
-        onProgress(data);
+        const ticket = await getSseTicket();
+        if (aborted) return;
+        params.set('ticket', ticket);
+        const query = params.toString();
+        const url = `/api/v1/admin/backup/export/stream${query ? `?${query}` : ''}`;
 
-        if (data.phase === 'complete' && data.downloadId) {
-          eventSource.close();
-          adminApi.downloadBackupFile(data.downloadId);
-        }
-        if (data.phase === 'error') {
-          eventSource.close();
-        }
-      } catch { /* ignore parse errors */ }
+        eventSource = new EventSource(url);
+
+        eventSource.onmessage = (event) => {
+          try {
+            const data = JSON.parse(event.data) as ExportProgress;
+            onProgress(data);
+
+            if (data.phase === 'complete' && data.downloadId) {
+              eventSource?.close();
+              adminApi.downloadBackupFile(data.downloadId);
+            }
+            if (data.phase === 'error') {
+              eventSource?.close();
+            }
+          } catch { /* ignore parse errors */ }
+        };
+
+        eventSource.onerror = () => {
+          eventSource?.close();
+          onProgress({
+            phase: 'error',
+            message: '连接中断',
+            current: 0,
+            total: 0,
+            percentage: 0,
+          });
+        };
+      } catch {
+        onProgress({
+          phase: 'error',
+          message: '获取认证凭据失败',
+          current: 0,
+          total: 0,
+          percentage: 0,
+        });
+      }
     };
 
-    eventSource.onerror = () => {
-      eventSource.close();
-      onProgress({
-        phase: 'error',
-        message: '连接中断',
-        current: 0,
-        total: 0,
-        percentage: 0,
-      });
-    };
+    run();
 
     return {
-      abort: () => eventSource.close(),
+      abort: () => {
+        aborted = true;
+        eventSource?.close();
+      },
     };
   },
 
@@ -176,9 +200,10 @@ export const adminApi = {
         const restoreId = data.data!.restoreId;
 
         // 阶段 2：SSE 恢复进度（20-100%）
-        const token = getAccessToken();
+        const ticket = await getSseTicket();
+        if (abortController.signal.aborted) return;
         const params = new URLSearchParams();
-        if (token) params.set('token', token);
+        params.set('ticket', ticket);
         const query = params.toString();
         const url = `/api/v1/admin/backup/import/stream/${restoreId}${query ? `?${query}` : ''}`;
 

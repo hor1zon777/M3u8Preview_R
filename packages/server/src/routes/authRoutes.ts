@@ -42,5 +42,6 @@ router.post('/refresh', conditionalRateLimit(refreshLimiter), authController.ref
 router.post('/logout', authController.logout);
 router.get('/me', authenticate, authController.me);
 router.post('/change-password', authenticate, validate(changePasswordSchema), authController.changePassword);
+router.post('/sse-ticket', authenticate, authController.sseTicket);
 
 export default router;
