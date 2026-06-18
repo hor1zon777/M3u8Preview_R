@@ -124,6 +124,12 @@ export const refreshSourceSchema = z.object({
   failedUrl: z.string().url().optional(),
 });
 
+// 插件测试解析 / 批量预览：传入原始链接列表
+export const sourcePluginPreviewSchema = z.object({
+  pluginId: z.string().max(100).optional(),
+  urls: z.array(z.string().min(1)).min(1, '至少提供一个链接').max(50, '单次最多 50 个链接'),
+});
+
 // ========== System Settings Validation ==========
 export const systemSettingSchema = z.object({
   key: z.string().min(1).max(100),

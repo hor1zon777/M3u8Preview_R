@@ -11,4 +11,15 @@ export const sourcePluginController = {
       next(error);
     }
   },
+
+  /** 测试解析：传入原始链接列表，返回每条解析结果（成功/失败） */
+  async testParse(req: Request, res: Response, next: NextFunction) {
+    try {
+      const { pluginId, urls } = req.body as { pluginId?: string; urls: string[] };
+      const results = await sourcePluginService.parseBatch(pluginId, urls);
+      res.json({ success: true, data: results });
+    } catch (error) {
+      next(error);
+    }
+  },
 };

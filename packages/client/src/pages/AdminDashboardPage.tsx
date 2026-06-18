@@ -1,7 +1,7 @@
 import { useState, useCallback } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
-import { Film, Users, FolderOpen, Play, Settings, Download, Shield, Activity, X, Plus } from 'lucide-react';
+import { Film, Users, FolderOpen, Play, Settings, Download, Shield, Activity, X, Plus, Puzzle } from 'lucide-react';
 import { adminApi } from '../services/adminApi.js';
 import { MediaThumbnail } from '../components/media/MediaThumbnail.js';
 import { BackupSection } from '../components/admin/BackupSection.js';
@@ -86,7 +86,19 @@ export function AdminDashboardPage() {
     );
   }
 
-  if (!stats) return null;
+  if (!stats) {
+    return (
+      <div className="space-y-4 py-16 text-center">
+        <p className="text-emby-text-secondary">管理面板数据加载失败，请稍后重试</p>
+        <button
+          onClick={() => queryClient.invalidateQueries({ queryKey: ['admin', 'dashboard'] })}
+          className="px-4 py-2 bg-emby-green text-white rounded-md hover:bg-emby-green-dark text-sm"
+        >
+          重新加载
+        </button>
+      </div>
+    );
+  }
 
   const statCards = [
     { label: '总媒体数', value: stats.totalMedia, icon: Film, color: 'text-blue-400' },
@@ -156,6 +168,16 @@ export function AdminDashboardPage() {
             <h3 className="text-white font-semibold group-hover:text-emby-green-light">批量导入</h3>
           </div>
           <p className="text-emby-text-muted text-sm mt-1">导入M3U8链接</p>
+        </Link>
+        <Link
+          to="/admin/plugins"
+          className="bg-emby-bg-card border border-emby-border-subtle rounded-md p-5 hover:border-emby-border-light transition-colors group"
+        >
+          <div className="flex items-center gap-2">
+            <Puzzle className="w-5 h-5 text-emby-text-secondary group-hover:text-emby-green-light" />
+            <h3 className="text-white font-semibold group-hover:text-emby-green-light">插件管理</h3>
+          </div>
+          <p className="text-emby-text-muted text-sm mt-1">动态解析源插件</p>
         </Link>
       </div>
 
