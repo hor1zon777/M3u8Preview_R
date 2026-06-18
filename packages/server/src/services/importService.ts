@@ -5,6 +5,56 @@ import { AppError } from '../middleware/errorHandler.js';
 import { parseText, parseCsv, parseJson, parseExcel } from '../parsers/index.js';
 import { thumbnailQueue } from './thumbnailService.js';
 import { resolveExternalPoster } from './posterDownloadService.js';
+import { sourcePluginService } from './sourcePluginService.js';
+import { config } from '../config.js';
+
+/**
+ * 把多行原始链接通过解析插件转换为导入条目。
+ * 解析成功的条目带上 m3u8 + source 元数据；失败的条目 m3u8Url 留空，
+ * 会被 importItemSchema 判为无效并在预览中标错，同时保留原链接与错误信息。
+ */
+async function parseSourcePluginItems(content: string, pluginId?: string): Promise<ImportItem[]> {
+  const urls = (content ?? '')
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean);
+
+  if (urls.length === 0) {
+    throw new AppError('请粘贴至少一个原始链接', 400);
+  }
+  if (urls.length > config.sourcePlugins.maxPreviewBatch) {
+    throw new AppError(`单次最多解析 ${config.sourcePlugins.maxPreviewBatch} 个链接`, 400);
+  }
+
+  const results = await sourcePluginService.parseBatch(pluginId, urls);
+  const { defaultCategory, defaultTags } = config.sourcePlugins;
+  const resolvedPluginId = pluginId || 'haijiao';
+
+  return results.map((entry): ImportItem => {
+    if (entry.ok && entry.result) {
+      return {
+        title: entry.result.title || entry.originalUrl,
+        m3u8Url: entry.result.m3u8Url,
+        sourceType: 'PLUGIN',
+        sourceOriginalUrl: entry.originalUrl,
+        sourcePlugin: resolvedPluginId,
+        sourceResolvedAt: new Date().toISOString(),
+        sourceMeta: entry.result.meta,
+        artist: entry.result.author,
+        categoryName: defaultCategory || undefined,
+        tagNames: defaultTags.length > 0 ? defaultTags : undefined,
+      };
+    }
+    return {
+      title: entry.originalUrl,
+      m3u8Url: '',
+      sourceType: 'PLUGIN',
+      sourceOriginalUrl: entry.originalUrl,
+      sourcePlugin: resolvedPluginId,
+      sourceLastError: entry.error,
+    };
+  });
+}
 
 export const importService = {
   /**
@@ -41,6 +91,8 @@ export const importService = {
           return { items: parseCsv(body.content), format: 'CSV' };
         case 'JSON':
           return { items: parseJson(body.content), format: 'JSON' };
+        case 'SOURCE_PLUGIN':
+          return { items: await parseSourcePluginItems(body.content, body.pluginId), format: 'SOURCE_PLUGIN' };
         default:
           return { items: parseText(body.content), format: 'TEXT' };
       }
@@ -154,6 +206,11 @@ export const importService = {
                 year: item.year || null,
                 artist: item.artist || null,
                 categoryId: item.categoryName ? (categoryMap.get(item.categoryName) || null) : null,
+                sourceType: item.sourceType || 'DIRECT_M3U8',
+                sourceOriginalUrl: item.sourceOriginalUrl || null,
+                sourcePlugin: item.sourcePlugin || null,
+                sourceResolvedAt: item.sourceResolvedAt ? new Date(item.sourceResolvedAt) : null,
+                sourceMeta: item.sourceMeta || null,
               },
             });
 

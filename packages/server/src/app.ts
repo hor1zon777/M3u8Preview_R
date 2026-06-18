@@ -20,6 +20,7 @@ import playlistRoutes from './routes/playlistRoutes.js';
 import importRoutes from './routes/importRoutes.js';
 import adminRoutes from './routes/adminRoutes.js';
 import proxyRoutes from './routes/proxyRoutes.js';
+import sourcePluginRoutes from './routes/sourcePluginRoutes.js';
 import { conditionalRateLimit, isRateLimitToggleRequest } from './middleware/conditionalRateLimit.js';
 
 function shouldBypassGlobalRateLimit(req: Request): boolean {
@@ -109,6 +110,7 @@ app.use('/api/v1/favorites', favoriteRoutes);
 app.use('/api/v1/upload', uploadRoutes);
 app.use('/api/v1/playlists', playlistRoutes);
 app.use('/api/v1/import', express.json({ limit: '10mb' }), importRoutes);
+app.use('/api/v1/source-plugins', sourcePluginRoutes);
 app.use('/api/v1/admin', adminRoutes);
 
 // Health check

@@ -1,10 +1,11 @@
 import { Prisma } from '@prisma/client';
 import { prisma } from '../lib/prisma.js';
 import { AppError } from '../middleware/errorHandler.js';
-import type { MediaCreateRequest, MediaUpdateRequest, MediaQueryParams, PaginatedResponse, Media, ArtistInfo } from '@m3u8-preview/shared';
+import type { MediaCreateRequest, MediaUpdateRequest, MediaQueryParams, PaginatedResponse, Media, ArtistInfo, RefreshSourceRequest, RefreshSourceResponse } from '@m3u8-preview/shared';
 import { serializeMedia, serializeMediaList } from '../utils/serializers.js';
 import { deleteThumbnail } from './thumbnailService.js';
 import { resolveExternalPoster } from './posterDownloadService.js';
+import { sourcePluginService } from './sourcePluginService.js';
 
 const mediaInclude = {
   category: true,
@@ -184,5 +185,50 @@ export const mediaService = {
     return result
       .filter((r): r is typeof r & { artist: string } => r.artist !== null && r.artist !== '')
       .map(r => ({ name: r.artist, videoCount: r._count.id }));
+  },
+
+  /**
+   * 重新解析动态源（PLUGIN）媒体的播放地址。
+   * 仅对 sourceType=PLUGIN 且有 sourceOriginalUrl 的媒体有效；
+   * 成功则更新 m3u8Url/sourceResolvedAt/sourceMeta 并清空错误，失败则记录 sourceLastError 并保留旧地址。
+   */
+  async refreshSource(id: string, _request: RefreshSourceRequest): Promise<RefreshSourceResponse> {
+    const media = await prisma.media.findUnique({ where: { id } });
+    if (!media) {
+      throw new AppError('Media not found', 404);
+    }
+    if (media.sourceType !== 'PLUGIN' || !media.sourceOriginalUrl) {
+      throw new AppError('该媒体不是动态解析源，无法刷新播放地址', 400);
+    }
+
+    try {
+      const parsed = await sourcePluginService.parseOne(
+        media.sourcePlugin ?? undefined,
+        media.sourceOriginalUrl,
+      );
+      const resolvedAt = new Date();
+      await prisma.media.update({
+        where: { id },
+        data: {
+          m3u8Url: parsed.m3u8Url,
+          sourceResolvedAt: resolvedAt,
+          sourceLastError: null,
+          sourceMeta: parsed.meta,
+        },
+      });
+      return {
+        mediaId: id,
+        m3u8Url: parsed.m3u8Url,
+        sourceResolvedAt: resolvedAt.toISOString(),
+      };
+    } catch (err) {
+      const message = err instanceof Error ? err.message : '解析失败';
+      // 记录失败原因供前台展示，保留旧地址不动
+      await prisma.media
+        .update({ where: { id }, data: { sourceLastError: message } })
+        .catch(() => {});
+      if (err instanceof AppError) throw err;
+      throw new AppError(`刷新播放地址失败：${message}`, 502);
+    }
   },
 };

@@ -4,7 +4,7 @@ import { mediaController } from '../controllers/mediaController.js';
 import { validate } from '../middleware/validate.js';
 import { authenticate, optionalAuth, requireRole } from '../middleware/auth.js';
 import { conditionalRateLimit } from '../middleware/conditionalRateLimit.js';
-import { mediaCreateSchema, mediaUpdateSchema, mediaQuerySchema, idParamSchema } from '@m3u8-preview/shared';
+import { mediaCreateSchema, mediaUpdateSchema, mediaQuerySchema, idParamSchema, refreshSourceSchema } from '@m3u8-preview/shared';
 
 const router = Router();
 
@@ -22,6 +22,19 @@ const viewsLimiter = rateLimit({
   message: { success: false, error: 'Too many view requests' },
 });
 
+// 刷新源地址会触发对外部解析服务的请求，按 userId（登录）或 IP 限流防滥用
+const refreshLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 30,
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: (req) => {
+    const userId = req.user?.userId;
+    return userId ? `u:${userId}` : `ip:${req.ip}`;
+  },
+  message: { success: false, error: '刷新过于频繁，请稍后再试' },
+});
+
 // Public routes (with optional auth for user-specific data)
 router.get('/', validate(mediaQuerySchema, 'query'), mediaController.findAll);
 router.get('/recent', mediaController.getRecent);
@@ -31,6 +44,9 @@ router.get('/:id', validate(idParamSchema, 'params'), mediaController.findById);
 
 // Authenticated routes — optionalAuth 让 keyGenerator 能拿到 userId
 router.post('/:id/views', optionalAuth, conditionalRateLimit(viewsLimiter), validate(idParamSchema, 'params'), mediaController.incrementViews);
+
+// 刷新动态源播放地址（PLUGIN 媒体）。登录用户均可触发，限流防滥用
+router.post('/:id/refresh-source', authenticate, conditionalRateLimit(refreshLimiter), validate(idParamSchema, 'params'), validate(refreshSourceSchema), mediaController.refreshSource);
 
 // Admin routes
 router.post('/', authenticate, requireRole('ADMIN'), validate(mediaCreateSchema), mediaController.create);

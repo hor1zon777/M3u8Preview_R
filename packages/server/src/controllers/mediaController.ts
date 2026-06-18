@@ -105,4 +105,13 @@ export const mediaController = {
       next(error);
     }
   },
+
+  async refreshSource(req: Request<Params>, res: Response, next: NextFunction) {
+    try {
+      const result = await mediaService.refreshSource(req.params.id, req.body);
+      res.json({ success: true, data: result });
+    } catch (error) {
+      next(error);
+    }
+  },
 };
