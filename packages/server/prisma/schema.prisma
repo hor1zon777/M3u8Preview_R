@@ -46,6 +46,12 @@ model Media {
   id          String   @id @default(uuid())
   title       String
   m3u8Url     String
+  sourceType  String   @default("DIRECT_M3U8") // DIRECT_M3U8 | PLUGIN
+  sourceOriginalUrl String?
+  sourcePlugin      String?
+  sourceResolvedAt  DateTime?
+  sourceLastError   String?
+  sourceMeta        String?
   posterUrl   String?
   description String?
   year        Int?
@@ -69,6 +75,8 @@ model Media {
   @@index([views])
   @@index([artist])
   @@index([m3u8Url])
+  @@index([sourceType])
+  @@index([sourcePlugin])
   @@map("media")
 }
 

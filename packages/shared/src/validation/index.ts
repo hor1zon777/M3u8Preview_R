@@ -26,6 +26,12 @@ export const mediaCreateSchema = z.object({
     .url('请输入有效的URL')
     .regex(/\.m3u8/, 'URL必须包含.m3u8')
     .refine(url => /^https?:\/\//.test(url), { message: '仅支持 HTTP/HTTPS 协议' }),
+  sourceType: z.enum(['DIRECT_M3U8', 'PLUGIN']).optional(),
+  sourceOriginalUrl: z.string().url().optional().or(z.literal('')),
+  sourcePlugin: z.string().max(100).optional(),
+  sourceResolvedAt: z.string().datetime().optional(),
+  sourceLastError: z.string().max(1000).optional(),
+  sourceMeta: z.string().max(10000).optional(),
   posterUrl: z.string().url().optional().or(z.literal('')),
   description: z.string().max(5000).optional(),
   year: z.number().int().min(1900).max(2100).optional(),
@@ -97,12 +103,25 @@ export const watchProgressSchema = z.object({
 export const importItemSchema = z.object({
   title: z.string().min(1),
   m3u8Url: z.string().url().refine(url => /^https?:\/\//.test(url), { message: 'Only HTTP(S) URLs are allowed' }),
+  sourceType: z.enum(['DIRECT_M3U8', 'PLUGIN']).optional(),
+  sourceOriginalUrl: z.string().url().optional().or(z.literal('')),
+  sourcePlugin: z.string().max(100).optional(),
+  sourceResolvedAt: z.string().datetime().optional(),
+  sourceLastError: z.string().max(1000).optional(),
+  sourceMeta: z.string().max(10000).optional(),
   posterUrl: z.string().url().optional().or(z.literal('')),
   description: z.string().optional(),
   year: z.number().int().min(1900).max(2100).optional(),
   artist: z.string().optional(),
   categoryName: z.string().optional(),
   tagNames: z.array(z.string()).optional(),
+});
+
+// ========== Source Plugin Validation ==========
+// 刷新动态源播放地址（PLUGIN 媒体）。reason/failedUrl 仅用于诊断，均可选。
+export const refreshSourceSchema = z.object({
+  reason: z.string().max(200).optional(),
+  failedUrl: z.string().url().optional(),
 });
 
 // ========== System Settings Validation ==========

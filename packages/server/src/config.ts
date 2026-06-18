@@ -65,6 +65,20 @@ export const config = {
     secret: process.env.PROXY_SECRET || (nodeEnv === 'production' ? '' : 'dev-proxy-secret'),
     signatureTtl: 4 * 60 * 60, // 签名有效期 4 小时（秒）
   },
+  sourcePlugins: {
+    haijiao: {
+      baseUrl: process.env.HAIJIAO_PLUGIN_BASE_URL || process.env.SOURCE_PARSER_BASE_URL || 'http://localhost:23000',
+      parsePath: process.env.HAIJIAO_PLUGIN_PARSE_PATH || process.env.SOURCE_PARSER_PATH || '/api/plugin/parse',
+      timeoutMs: parseInt(process.env.SOURCE_PARSER_TIMEOUT_MS || '30000', 10),
+    },
+    previewConcurrency: Math.max(1, parseInt(process.env.SOURCE_PLUGIN_PREVIEW_CONCURRENCY || '1', 10)),
+    maxPreviewBatch: Math.max(1, parseInt(process.env.SOURCE_PLUGIN_MAX_PREVIEW_BATCH || '50', 10)),
+    defaultCategory: process.env.SOURCE_PLUGIN_DEFAULT_CATEGORY || '海角',
+    defaultTags: (process.env.SOURCE_PLUGIN_DEFAULT_TAGS || '海角,自动解析')
+      .split(',')
+      .map(tag => tag.trim())
+      .filter(Boolean),
+  },
   // 是否信任 CDN 回源头（CF-Connecting-IP / True-Client-IP）
   // 默认 true：适配站点部署在 Cloudflare/Akamai 等 CDN 后的常见场景
   // 注意：若实际未部署 CDN 或未在 nginx/防火墙层限制回源 IP，攻击者可绕过 CDN 直连伪造这些头。

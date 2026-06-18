@@ -10,11 +10,17 @@ export enum MediaStatus {
   ERROR = 'ERROR',
 }
 
+export enum MediaSourceType {
+  DIRECT_M3U8 = 'DIRECT_M3U8',
+  PLUGIN = 'PLUGIN',
+}
+
 export enum ImportFormat {
   TEXT = 'TEXT',
   CSV = 'CSV',
   EXCEL = 'EXCEL',
   JSON = 'JSON',
+  SOURCE_PLUGIN = 'SOURCE_PLUGIN',
 }
 
 export enum ImportStatus {
@@ -69,6 +75,12 @@ export interface Media {
   id: string;
   title: string;
   m3u8Url: string;
+  sourceType: MediaSourceType | string;
+  sourceOriginalUrl?: string | null;
+  sourcePlugin?: string | null;
+  sourceResolvedAt?: string | null;
+  sourceLastError?: string | null;
+  sourceMeta?: string | null;
   posterUrl?: string | null;
   description?: string | null;
   year?: number | null;
@@ -87,6 +99,12 @@ export interface Media {
 export interface MediaCreateRequest {
   title: string;
   m3u8Url: string;
+  sourceType?: MediaSourceType | string;
+  sourceOriginalUrl?: string;
+  sourcePlugin?: string;
+  sourceResolvedAt?: string;
+  sourceLastError?: string;
+  sourceMeta?: string;
   posterUrl?: string;
   description?: string;
   year?: number;
@@ -211,6 +229,12 @@ export interface WatchProgressUpdate {
 export interface ImportItem {
   title: string;
   m3u8Url: string;
+  sourceType?: MediaSourceType | string;
+  sourceOriginalUrl?: string;
+  sourcePlugin?: string;
+  sourceResolvedAt?: string;
+  sourceLastError?: string;
+  sourceMeta?: string;
   posterUrl?: string;
   description?: string;
   year?: number;
@@ -238,6 +262,29 @@ export interface ImportResult {
   successCount: number;
   failedCount: number;
   errors: ImportError[];
+}
+
+// ========== Source Parser Plugins ==========
+export interface SourcePluginInfo {
+  id: string;
+  name: string;
+  description?: string;
+}
+
+export interface SourcePluginPreviewRequest {
+  pluginId?: string;
+  urls: string[];
+}
+
+export interface RefreshSourceRequest {
+  reason?: string;
+  failedUrl?: string;
+}
+
+export interface RefreshSourceResponse {
+  mediaId: string;
+  m3u8Url: string;
+  sourceResolvedAt: string;
 }
 
 export interface ImportLog {
