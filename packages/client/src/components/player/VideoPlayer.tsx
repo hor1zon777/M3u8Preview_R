@@ -59,10 +59,12 @@ interface VideoPlayerProps {
   controls?: boolean;
   /** 视频旋转角度（度），仅支持 0 / 90 / 180 / 270；在 fillContainer 模式下生效 */
   rotation?: 0 | 90 | 180 | 270;
+  /** HLS 致命错误且自动重试 / 代理回退均失败时触发（用于动态源重解析） */
+  onFatalError?: () => void;
 }
 
 export const VideoPlayer = forwardRef<HTMLVideoElement, VideoPlayerProps>(
-  function VideoPlayer({ media, startTime = 0, onTimeUpdate, autoPlay = false, fillContainer = false, controls = true, rotation = 0 }, ref) {
+  function VideoPlayer({ media, startTime = 0, onTimeUpdate, autoPlay = false, fillContainer = false, controls = true, rotation = 0, onFatalError }, ref) {
     const videoRef = useRef<HTMLVideoElement>(null);
     const hlsRef = useRef<Hls | null>(null);
     const containerRef = useRef<HTMLDivElement>(null);
@@ -169,6 +171,7 @@ export const VideoPlayer = forwardRef<HTMLVideoElement, VideoPlayerProps>(
                 } else {
                   console.error('HLS network error: max retries exceeded');
                   hls.destroy();
+                  onFatalError?.();
                 }
                 break;
               case Hls.ErrorTypes.MEDIA_ERROR:
@@ -179,11 +182,13 @@ export const VideoPlayer = forwardRef<HTMLVideoElement, VideoPlayerProps>(
                 } else {
                   console.error('HLS media error: max retries exceeded');
                   hls.destroy();
+                  onFatalError?.();
                 }
                 break;
               default:
                 console.error('Fatal HLS error:', data);
                 hls.destroy();
+                onFatalError?.();
                 break;
             }
           }
@@ -206,6 +211,8 @@ export const VideoPlayer = forwardRef<HTMLVideoElement, VideoPlayerProps>(
             getSignedProxyUrl(media.m3u8Url)
               .then(proxyUrl => { if (mountedRef.current) initHls(proxyUrl); })
               .catch(() => console.error('获取签名代理 URL 失败'));
+          } else {
+            onFatalError?.();
           }
         };
         video.addEventListener('error', handleError);
@@ -214,7 +221,7 @@ export const VideoPlayer = forwardRef<HTMLVideoElement, VideoPlayerProps>(
           video.play().catch(() => {});
         }
       }
-    }, [media.m3u8Url, startTime, setQualities, autoPlay]);
+    }, [media.m3u8Url, startTime, setQualities, autoPlay, onFatalError]);
 
     // Handle quality change
     useEffect(() => {

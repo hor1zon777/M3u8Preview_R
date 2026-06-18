@@ -1,24 +1,33 @@
 import { useState, useRef } from 'react';
-import { useMutation } from '@tanstack/react-query';
+import { useMutation, useQuery } from '@tanstack/react-query';
 import { importApi } from '../services/importApi.js';
+import { sourcePluginApi } from '../services/sourcePluginApi.js';
 import type { ImportPreviewResponse, ImportResult, ImportItem } from '@m3u8-preview/shared';
 
 type Step = 'input' | 'preview' | 'result';
 
 export function ImportPage() {
   const [step, setStep] = useState<Step>('input');
-  const [format, setFormat] = useState<'text' | 'file'>('text');
+  const [format, setFormat] = useState<'text' | 'file' | 'plugin'>('text');
   const [textContent, setTextContent] = useState('');
+  const [selectedPlugin, setSelectedPlugin] = useState('');
   const [preview, setPreview] = useState<ImportPreviewResponse | null>(null);
   const [result, setResult] = useState<ImportResult | null>(null);
   const [fileName, setFileName] = useState('');
   const [selectedFileName, setSelectedFileName] = useState('');
   const fileRef = useRef<HTMLInputElement>(null);
 
+  const { data: plugins } = useQuery({
+    queryKey: ['sourcePlugins'],
+    queryFn: () => sourcePluginApi.listPlugins(),
+  });
+
   const previewMutation = useMutation({
     mutationFn: async () => {
       if (format === 'text') {
         return importApi.previewText(textContent);
+      } else if (format === 'plugin') {
+        return importApi.previewPlugin(textContent, selectedPlugin || undefined);
       } else {
         const file = fileRef.current?.files?.[0];
         if (!file) throw new Error('请选择文件');
@@ -38,7 +47,7 @@ export function ImportPage() {
       const validItems = preview.items.filter((_: ImportItem, i: number) =>
         !preview.errors.some(e => e.row === i + 1)
       );
-      return importApi.execute(validItems, format === 'text' ? 'TEXT' : 'FILE', fileName);
+      return importApi.execute(validItems, format === 'text' ? 'TEXT' : format === 'plugin' ? 'SOURCE_PLUGIN' : 'FILE', fileName);
     },
     onSuccess: (data) => {
       setResult(data);
@@ -50,6 +59,7 @@ export function ImportPage() {
     setStep('input');
     setFormat('text');
     setTextContent('');
+    setSelectedPlugin('');
     setPreview(null);
     setResult(null);
     setFileName('');
@@ -94,9 +104,12 @@ export function ImportPage() {
             <button onClick={() => setFormat('file')} className={`px-4 py-2 rounded-lg text-sm ${format === 'file' ? 'bg-emby-green text-white' : 'bg-emby-bg-input text-emby-text-secondary hover:bg-emby-bg-elevated'}`}>
               文件上传
             </button>
+            <button onClick={() => setFormat('plugin')} className={`px-4 py-2 rounded-lg text-sm ${format === 'plugin' ? 'bg-emby-green text-white' : 'bg-emby-bg-input text-emby-text-secondary hover:bg-emby-bg-elevated'}`}>
+              插件源
+            </button>
           </div>
 
-          {format === 'text' ? (
+          {format === 'text' && (
             <div className="space-y-2">
               <p className="text-sm text-emby-text-secondary">每行一条记录。格式：纯URL 或 标题|URL|作者 或 标题|URL|分类|标签|作者</p>
               <textarea
@@ -107,7 +120,34 @@ export function ImportPage() {
                 className="w-full px-4 py-3 bg-emby-bg-card border border-emby-border rounded-lg text-white placeholder-emby-text-muted text-sm font-mono focus:outline-none focus:ring-2 focus:ring-emby-green resize-y"
               />
             </div>
-          ) : (
+          )}
+
+          {format === 'plugin' && (
+            <div className="space-y-2">
+              <p className="text-sm text-emby-text-secondary">每行一个原始帖子链接，提交后由解析插件实时解析为可播放地址。</p>
+              {plugins && plugins.length > 1 && (
+                <select
+                  value={selectedPlugin}
+                  onChange={e => setSelectedPlugin(e.target.value)}
+                  className="px-3 py-2 bg-emby-bg-card border border-emby-border rounded-lg text-white text-sm focus:outline-none focus:ring-2 focus:ring-emby-green"
+                >
+                  <option value="">默认插件</option>
+                  {plugins.map(p => (
+                    <option key={p.id} value={p.id}>{p.name}</option>
+                  ))}
+                </select>
+              )}
+              <textarea
+                value={textContent}
+                onChange={e => setTextContent(e.target.value)}
+                rows={12}
+                placeholder={"https://hj260202ffb.top/post/details/123456\nhttps://hj260202ffb.top/post/details/234567"}
+                className="w-full px-4 py-3 bg-emby-bg-card border border-emby-border rounded-lg text-white placeholder-emby-text-muted text-sm font-mono focus:outline-none focus:ring-2 focus:ring-emby-green resize-y"
+              />
+            </div>
+          )}
+
+          {format === 'file' && (
             <div className="space-y-2">
               <p className="text-sm text-emby-text-secondary">支持 CSV、Excel (.xlsx)、JSON 格式</p>
               <div className="border-2 border-dashed border-emby-border rounded-lg p-8 text-center hover:border-emby-border-light transition-colors">
@@ -139,7 +179,7 @@ export function ImportPage() {
 
           <button
             onClick={() => previewMutation.mutate()}
-            disabled={previewMutation.isPending || (format === 'text' && !textContent.trim())}
+            disabled={previewMutation.isPending || ((format === 'text' || format === 'plugin') && !textContent.trim())}
             className="px-6 py-2 bg-emby-green text-white rounded-lg hover:bg-emby-green-dark disabled:opacity-50 text-sm"
           >
             {previewMutation.isPending ? '解析中...' : '预览'}

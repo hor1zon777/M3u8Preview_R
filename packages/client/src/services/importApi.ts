@@ -16,6 +16,12 @@ export const importApi = {
     return data.data!;
   },
 
+  /** 插件源预览：粘贴多行原始链接，后端实时解析为可导入条目 */
+  async previewPlugin(content: string, pluginId?: string) {
+    const { data } = await api.post<ApiResponse<ImportPreviewResponse>>('/import/preview', { content, format: 'SOURCE_PLUGIN', pluginId });
+    return data.data!;
+  },
+
   async execute(items: any[], format: string, fileName?: string) {
     const { data } = await api.post<ApiResponse<ImportResult>>('/import/execute', { items, format, fileName });
     return data.data!;

@@ -92,6 +92,13 @@ export function MediaDetailPage() {
     },
   });
 
+  const refreshSourceMutation = useMutation({
+    mutationFn: () => mediaApi.refreshSource(id!),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['media', id] });
+    },
+  });
+
   if (isLoading) {
     return (
       <div className="animate-pulse">
@@ -271,6 +278,19 @@ export function MediaDetailPage() {
               <p className="text-emby-text-primary leading-relaxed line-clamp-3">{media.description}</p>
             )}
 
+            {/* 动态源信息 */}
+            {media.sourceType === 'PLUGIN' && (
+              <div className="text-xs text-emby-text-muted space-y-1">
+                <p>动态解析源{media.sourcePlugin ? `（${media.sourcePlugin}）` : ''}，播放地址按需实时解析</p>
+                {media.sourceResolvedAt && <p>最近解析：{formatDate(media.sourceResolvedAt)}</p>}
+                {refreshSourceMutation.isError ? (
+                  <p className="text-red-400">刷新失败：{(refreshSourceMutation.error as Error).message}</p>
+                ) : media.sourceLastError ? (
+                  <p className="text-red-400">上次解析错误：{media.sourceLastError}</p>
+                ) : null}
+              </div>
+            )}
+
             {/* Action buttons */}
             <div className="flex items-center gap-3 pt-2">
               <button
@@ -310,6 +330,16 @@ export function MediaDetailPage() {
                 >
                   <RefreshCw className={`w-4 h-4 ${thumbnailMutation.isPending ? 'animate-spin' : ''}`} />
                   {thumbnailMutation.isPending ? '生成中...' : '刷新封面'}
+                </button>
+              )}
+              {user && media.sourceType === 'PLUGIN' && (
+                <button
+                  onClick={() => refreshSourceMutation.mutate()}
+                  disabled={refreshSourceMutation.isPending}
+                  className="flex items-center gap-1.5 px-3 py-1.5 text-sm text-emby-text-secondary hover:text-white bg-emby-bg-input rounded-md hover:bg-emby-bg-elevated transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  <RefreshCw className={`w-4 h-4 ${refreshSourceMutation.isPending ? 'animate-spin' : ''}`} />
+                  {refreshSourceMutation.isPending ? '解析中...' : '刷新播放地址'}
                 </button>
               )}
             </div>

@@ -3,6 +3,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState, useEffect, useRef, useCallback, type PointerEvent as ReactPointerEvent } from 'react';
 import { ArrowLeft } from 'lucide-react';
 import { mediaApi } from '../services/mediaApi.js';
+import type { Media } from '@m3u8-preview/shared';
 import { historyApi } from '../services/historyApi.js';
 import { VideoPlayer } from '../components/player/VideoPlayer.js';
 import { PlayerControls } from '../components/player/PlayerControls.js';
@@ -38,6 +39,32 @@ export function PlaybackPage() {
   });
 
   const { handleTimeUpdate } = useWatchProgress({ mediaId: id ?? '' });
+
+  // 动态源（PLUGIN）播放地址失效时自动重解析，每次播放最多自动刷新一次
+  const [refreshing, setRefreshing] = useState(false);
+  const autoRefreshedRef = useRef(false);
+
+  useEffect(() => {
+    autoRefreshedRef.current = false;
+  }, [id]);
+
+  const handleFatalError = useCallback(async () => {
+    if (!media || media.sourceType !== 'PLUGIN' || !media.sourceOriginalUrl) return;
+    if (autoRefreshedRef.current) return;
+    autoRefreshedRef.current = true;
+    setRefreshing(true);
+    try {
+      const result = await mediaApi.refreshSource(id!);
+      // 用新地址更新缓存 → VideoPlayer 因 m3u8Url 变化自动重载
+      queryClient.setQueryData<Media>(['media', id], (old) =>
+        old ? { ...old, m3u8Url: result.m3u8Url, sourceResolvedAt: result.sourceResolvedAt } : old,
+      );
+    } catch {
+      // 重解析失败：保留失败态，用户可返回或稍后重试
+    } finally {
+      setRefreshing(false);
+    }
+  }, [media, id, queryClient]);
 
   const restoreRouteKey = (location.state as { restoreRouteKey?: string } | null)?.restoreRouteKey;
 
@@ -223,10 +250,21 @@ export function PlaybackPage() {
           fillContainer
           controls={false}
           rotation={rotation}
+          onFatalError={handleFatalError}
         />
       ) : (
         <div className="w-full h-full flex items-center justify-center">
           <div className="animate-spin rounded-full h-10 w-10 border-t-2 border-b-2 border-emby-green" />
+        </div>
+      )}
+
+      {/* 动态源重新解析中提示 */}
+      {refreshing && (
+        <div className="absolute inset-0 z-20 flex items-center justify-center bg-black/60 pointer-events-none">
+          <div className="text-center">
+            <div className="animate-spin rounded-full h-10 w-10 border-t-2 border-b-2 border-emby-green mx-auto mb-3" />
+            <p className="text-white text-sm">正在重新解析播放地址…</p>
+          </div>
         </div>
       )}
 

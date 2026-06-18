@@ -1,5 +1,5 @@
 import api from './api.js';
-import type { ApiResponse, Media, PaginatedResponse, MediaQueryParams, MediaCreateRequest, ArtistInfo } from '@m3u8-preview/shared';
+import type { ApiResponse, Media, PaginatedResponse, MediaQueryParams, MediaCreateRequest, ArtistInfo, RefreshSourceRequest, RefreshSourceResponse } from '@m3u8-preview/shared';
 
 export const mediaApi = {
   async getAll(params?: MediaQueryParams) {
@@ -47,6 +47,12 @@ export const mediaApi = {
 
   async regenerateThumbnail(id: string) {
     const { data } = await api.post<ApiResponse<Media>>(`/media/${id}/thumbnail`);
+    return data.data!;
+  },
+
+  /** 重新解析动态源（PLUGIN）媒体的播放地址 */
+  async refreshSource(id: string, body?: RefreshSourceRequest) {
+    const { data } = await api.post<ApiResponse<RefreshSourceResponse>>(`/media/${id}/refresh-source`, body ?? {});
     return data.data!;
   },
 };

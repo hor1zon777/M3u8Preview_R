@@ -44,6 +44,9 @@ export function AdminMediaPage() {
   const descriptionFieldId = `${fieldIdBase}-description`;
   const pageSizeFieldId = `${fieldIdBase}-page-size`;
   const filterCategoryFieldId = `${fieldIdBase}-filter-category`;
+  const sourceTypeFieldId = `${fieldIdBase}-source-type`;
+  const sourceOriginalUrlFieldId = `${fieldIdBase}-source-original-url`;
+  const sourcePluginFieldId = `${fieldIdBase}-source-plugin`;
 
   // 搜索变化时重置分页和选择
   useEffect(() => {
@@ -223,6 +226,9 @@ export function AdminMediaPage() {
       rating: media.rating || undefined,
       artist: media.artist || '',
       categoryId: media.categoryId || '',
+      sourceType: media.sourceType || 'DIRECT_M3U8',
+      sourceOriginalUrl: media.sourceOriginalUrl || '',
+      sourcePlugin: media.sourcePlugin || '',
     });
     setShowAdd(true);
   }
@@ -415,7 +421,44 @@ export function AdminMediaPage() {
                   onChange={(categoryId) => setForm({ ...form, categoryId })}
                 />
               </div>
+              <div className="space-y-2">
+                <label htmlFor={sourceTypeFieldId} className="text-sm text-emby-text-secondary">来源类型</label>
+                <select
+                  id={sourceTypeFieldId}
+                  value={form.sourceType || 'DIRECT_M3U8'}
+                  onChange={e => setForm({ ...form, sourceType: e.target.value as 'DIRECT_M3U8' | 'PLUGIN' })}
+                  className="w-full px-3 py-2.5 bg-emby-bg-input border border-emby-border rounded-lg text-white text-sm focus:outline-none focus:ring-2 focus:ring-emby-green"
+                >
+                  <option value="DIRECT_M3U8">直链 M3U8</option>
+                  <option value="PLUGIN">动态解析源</option>
+                </select>
+              </div>
             </div>
+
+            {form.sourceType === 'PLUGIN' && (
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <label htmlFor={sourceOriginalUrlFieldId} className="text-sm text-emby-text-secondary">原始链接</label>
+                  <input
+                    id={sourceOriginalUrlFieldId}
+                    value={form.sourceOriginalUrl || ''}
+                    onChange={e => setForm({ ...form, sourceOriginalUrl: e.target.value })}
+                    placeholder="解析插件使用的原始帖子链接"
+                    className="w-full px-3 py-2.5 bg-emby-bg-input border border-emby-border rounded-lg text-white text-sm placeholder-emby-text-muted focus:outline-none focus:ring-2 focus:ring-emby-green focus:border-transparent"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <label htmlFor={sourcePluginFieldId} className="text-sm text-emby-text-secondary">解析插件</label>
+                  <input
+                    id={sourcePluginFieldId}
+                    value={form.sourcePlugin || ''}
+                    onChange={e => setForm({ ...form, sourcePlugin: e.target.value })}
+                    placeholder="留空使用默认插件（haijiao）"
+                    className="w-full px-3 py-2.5 bg-emby-bg-input border border-emby-border rounded-lg text-white text-sm placeholder-emby-text-muted focus:outline-none focus:ring-2 focus:ring-emby-green focus:border-transparent"
+                  />
+                </div>
+              </div>
+            )}
 
             <div className="space-y-2">
               <label htmlFor={descriptionFieldId} className="text-sm text-emby-text-secondary">描述</label>
