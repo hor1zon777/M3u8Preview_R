@@ -224,3 +224,14 @@ model LoginRecord {
   @@index([createdAt])
   @@map("login_records")
 }
+
+model SourcePlugin {
+  id            String   @id                  // 对应插件代码声明的 id
+  enabled       Boolean  @default(false)
+  config        String   @default("{}")       // JSON：配置值 { key: value }
+  installedFrom String   @default("builtin")  // builtin | upload
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@map("source_plugins")
+}

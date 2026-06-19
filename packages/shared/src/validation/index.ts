@@ -27,7 +27,7 @@ export const mediaCreateSchema = z.object({
     .regex(/\.m3u8/, 'URL必须包含.m3u8')
     .refine(url => /^https?:\/\//.test(url), { message: '仅支持 HTTP/HTTPS 协议' }),
   sourceType: z.enum(['DIRECT_M3U8', 'PLUGIN']).optional(),
-  sourceOriginalUrl: z.string().url().optional().or(z.literal('')),
+  sourceOriginalUrl: z.string().max(2000).optional().or(z.literal('')),
   sourcePlugin: z.string().max(100).optional(),
   sourceResolvedAt: z.string().datetime().optional(),
   sourceLastError: z.string().max(1000).optional(),
@@ -104,7 +104,7 @@ export const importItemSchema = z.object({
   title: z.string().min(1),
   m3u8Url: z.string().url().refine(url => /^https?:\/\//.test(url), { message: 'Only HTTP(S) URLs are allowed' }),
   sourceType: z.enum(['DIRECT_M3U8', 'PLUGIN']).optional(),
-  sourceOriginalUrl: z.string().url().optional().or(z.literal('')),
+  sourceOriginalUrl: z.string().max(2000).optional().or(z.literal('')),
   sourcePlugin: z.string().max(100).optional(),
   sourceResolvedAt: z.string().datetime().optional(),
   sourceLastError: z.string().max(1000).optional(),
@@ -128,6 +128,21 @@ export const refreshSourceSchema = z.object({
 export const sourcePluginPreviewSchema = z.object({
   pluginId: z.string().max(100).optional(),
   urls: z.array(z.string().min(1)).min(1, '至少提供一个链接').max(50, '单次最多 50 个链接'),
+});
+
+// 插件 id 路径参数（插件 id 为 slug 风格，非 uuid）
+export const sourcePluginIdParamSchema = z.object({
+  id: z.string().min(1).max(100),
+});
+
+// 启用/禁用插件
+export const sourcePluginToggleSchema = z.object({
+  enabled: z.boolean(),
+});
+
+// 更新插件配置（值为字符串/数字/布尔；required 等具体校验在 service 层按 configSchema 做）
+export const sourcePluginConfigSchema = z.object({
+  config: z.record(z.union([z.string(), z.number(), z.boolean()])),
 });
 
 // ========== System Settings Validation ==========

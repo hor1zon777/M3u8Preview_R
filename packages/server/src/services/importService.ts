@@ -26,9 +26,9 @@ async function parseSourcePluginItems(content: string, pluginId?: string): Promi
     throw new AppError(`单次最多解析 ${config.sourcePlugins.maxPreviewBatch} 个链接`, 400);
   }
 
-  const results = await sourcePluginService.parseBatch(pluginId, urls);
-  const { defaultCategory, defaultTags } = config.sourcePlugins;
-  const resolvedPluginId = pluginId || 'haijiao';
+  // 解析插件并取其默认分类/标签（未启用插件 / 未知 id 时抛错引导）
+  const { pluginId: resolvedPluginId, defaults } = await sourcePluginService.getPluginDefaults(pluginId);
+  const results = await sourcePluginService.parseBatch(resolvedPluginId, urls);
 
   return results.map((entry): ImportItem => {
     if (entry.ok && entry.result) {
@@ -41,8 +41,8 @@ async function parseSourcePluginItems(content: string, pluginId?: string): Promi
         sourceResolvedAt: new Date().toISOString(),
         sourceMeta: entry.result.meta,
         artist: entry.result.author,
-        categoryName: defaultCategory || undefined,
-        tagNames: defaultTags.length > 0 ? defaultTags : undefined,
+        categoryName: defaults.category || undefined,
+        tagNames: defaults.tags && defaults.tags.length > 0 ? defaults.tags : undefined,
       };
     }
     return {

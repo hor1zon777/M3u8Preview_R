@@ -4,6 +4,7 @@ import { prisma } from './lib/prisma.js';
 import { checkFfmpeg } from './services/thumbnailService.js';
 import { migrateExternalPosters } from './services/posterDownloadService.js';
 import { ensureDefaultSettings } from './services/settingsMigration.js';
+import { initSourcePlugins } from './sourcePlugins/index.js';
 import type { Server } from 'http';
 
 let server: Server;
@@ -18,6 +19,9 @@ async function main() {
 
   // Check ffmpeg availability for thumbnail generation
   await checkFfmpeg();
+
+  // 动态加载源解析插件（扫描 plugins/ 目录，初始无内置插件）
+  await initSourcePlugins();
 
   // 监听地址：生产默认 127.0.0.1（搭配 nginx 反代 + host 网络模式，避免 3000 端口暴露到宿主机所有网卡）
   // 开发环境默认 0.0.0.0 便于局域网调试；可通过 BIND_ADDRESS 显式覆盖

@@ -265,10 +265,46 @@ export interface ImportResult {
 }
 
 // ========== Source Parser Plugins ==========
+/** 公开插件信息（导入页/详情页用，仅返回已启用插件） */
 export interface SourcePluginInfo {
   id: string;
   name: string;
   description?: string;
+  enabled?: boolean;
+}
+
+/** 插件配置项声明：后台据此动态渲染配置表单 */
+export interface SourcePluginConfigField {
+  key: string;
+  label: string;
+  type: 'text' | 'password' | 'number' | 'boolean' | 'textarea';
+  required?: boolean;
+  default?: string | number | boolean;
+  placeholder?: string;
+  description?: string;
+}
+
+/** 管理端插件信息（含代码定义 + 数据库状态 + 配置） */
+export interface SourcePluginAdminInfo {
+  id: string;
+  name: string;
+  description?: string;
+  author?: string;
+  version?: string;
+  enabled: boolean;
+  installedFrom: 'builtin' | 'upload';
+  configSchema?: SourcePluginConfigField[];
+  config: Record<string, string | number | boolean>;
+}
+
+/** 启用/禁用插件请求 */
+export interface SourcePluginToggleRequest {
+  enabled: boolean;
+}
+
+/** 更新插件配置请求 */
+export interface SourcePluginConfigRequest {
+  config: Record<string, string | number | boolean>;
 }
 
 export interface SourcePluginPreviewRequest {
