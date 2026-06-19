@@ -54,3 +54,6 @@ packages/server/prisma/migrations/**/migration_lock.toml
 # Claude Code
 .claude/plan/
 .claude/settings.local.json
+
+# 运行时上传的解析插件（由后台安装生成，非交付件；交付件见 packages/server/plugin-dist/）
+packages/server/plugins-data/
