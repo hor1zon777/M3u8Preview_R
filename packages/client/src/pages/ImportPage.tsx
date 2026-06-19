@@ -104,9 +104,11 @@ export function ImportPage() {
             <button onClick={() => setFormat('file')} className={`px-4 py-2 rounded-lg text-sm ${format === 'file' ? 'bg-emby-green text-white' : 'bg-emby-bg-input text-emby-text-secondary hover:bg-emby-bg-elevated'}`}>
               文件上传
             </button>
-            <button onClick={() => setFormat('plugin')} className={`px-4 py-2 rounded-lg text-sm ${format === 'plugin' ? 'bg-emby-green text-white' : 'bg-emby-bg-input text-emby-text-secondary hover:bg-emby-bg-elevated'}`}>
-              插件源
-            </button>
+            {plugins && plugins.length > 0 && (
+              <button onClick={() => setFormat('plugin')} className={`px-4 py-2 rounded-lg text-sm ${format === 'plugin' ? 'bg-emby-green text-white' : 'bg-emby-bg-input text-emby-text-secondary hover:bg-emby-bg-elevated'}`}>
+                插件源
+              </button>
+            )}
           </div>
 
           {format === 'text' && (
@@ -125,6 +127,11 @@ export function ImportPage() {
           {format === 'plugin' && (
             <div className="space-y-2">
               <p className="text-sm text-emby-text-secondary">每行一个原始帖子链接，提交后由解析插件实时解析为可播放地址。</p>
+              {plugins && plugins.length === 0 && (
+                <div className="bg-yellow-500/10 border border-yellow-500/20 text-yellow-300 px-4 py-3 rounded-md text-sm">
+                  尚未启用任何解析插件。请前往「管理后台 → 插件管理」上传或启用插件。
+                </div>
+              )}
               {plugins && plugins.length > 1 && (
                 <select
                   value={selectedPlugin}
@@ -179,7 +186,7 @@ export function ImportPage() {
 
           <button
             onClick={() => previewMutation.mutate()}
-            disabled={previewMutation.isPending || ((format === 'text' || format === 'plugin') && !textContent.trim())}
+            disabled={previewMutation.isPending || ((format === 'text' || format === 'plugin') && !textContent.trim()) || (format === 'plugin' && (!plugins || plugins.length === 0))}
             className="px-6 py-2 bg-emby-green text-white rounded-lg hover:bg-emby-green-dark disabled:opacity-50 text-sm"
           >
             {previewMutation.isPending ? '解析中...' : '预览'}

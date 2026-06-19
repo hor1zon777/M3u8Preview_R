@@ -453,7 +453,7 @@ export function AdminMediaPage() {
                     id={sourcePluginFieldId}
                     value={form.sourcePlugin || ''}
                     onChange={e => setForm({ ...form, sourcePlugin: e.target.value })}
-                    placeholder="留空使用默认插件（haijiao）"
+                    placeholder="留空使用首个已加载插件"
                     className="w-full px-3 py-2.5 bg-emby-bg-input border border-emby-border rounded-lg text-white text-sm placeholder-emby-text-muted focus:outline-none focus:ring-2 focus:ring-emby-green focus:border-transparent"
                   />
                 </div>
