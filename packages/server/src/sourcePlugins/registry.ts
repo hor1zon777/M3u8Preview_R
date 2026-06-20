@@ -209,10 +209,36 @@ async function parseOne(pluginId: string | undefined, originalUrl: string): Prom
 }
 
 /**
+ * 风控信号识别：命中后批量解析会在本次调用内逐级降低并发，放慢请求节奏。
+ * 上游限流通常表现为 HTTP 429（请求过频）/ 403（被拒）/ 503（过载），插件会把上游
+ * 状态码透传进错误文案（如「获取帖子数据失败：HTTP 429」），故按文案匹配；另兼容常见
+ * 中英文限流关键词以覆盖自定义文案。超时类错误（如「请求超时」）不计为风控。
+ */
+function isRateLimitError(message: string | undefined): boolean {
+  if (!message) return false;
+  return (
+    /\bHTTP\s*(429|403|503)\b/i.test(message) ||
+    /(频繁|限流|限速|稍后再试|访问受限|风控|too\s*many\s*requests|rate\s*limit|forbidden)/i.test(message)
+  );
+}
+
+/** 风控重试参数：仅对「被风控误伤」的条目生效 */
+const RATE_LIMIT_MAX_RETRIES = 2; // 单条最多因风控重试的次数
+const RATE_LIMIT_RETRY_BASE_MS = 1500; // 重试基础延迟，按已重试次数指数退避（1.5s、3s …）
+
+/** Promise 化的延迟 */
+function delay(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+/**
  * 批量解析原始链接。
  * - 去重 / 去空，并截断到 config.sourcePlugins.maxPreviewBatch
- * - 按 config.sourcePlugins.previewConcurrency 控制并发
- * - 单条失败不影响其他条目，结果按原顺序返回
+ * - 起始并发为 config.sourcePlugins.previewConcurrency（默认 3）；每命中一次风控，并发上限
+ *   逐级下调（3 → 2 → 1，最低 1），用于放慢节奏、降低后续条目被风控的概率
+ * - 被风控误伤的条目「延迟后重排队」重试（最多 RATE_LIMIT_MAX_RETRIES 次，指数退避），
+ *   避免立即重试加重风控；非风控失败（Cookie 失效 / 超时 / 解析不到资源等）不重试，直接记失败
+ * - 单条失败不影响其他条目，结果按原顺序回填
  */
 async function parseBatch(pluginId: string | undefined, urls: string[]): Promise<BatchParseEntry[]> {
   // 提前校验插件可用并取其配置（无可用插件直接抛错，而非逐条失败）
@@ -226,28 +252,61 @@ async function parseBatch(pluginId: string | undefined, urls: string[]): Promise
   }
 
   const results: BatchParseEntry[] = new Array(limited.length);
-  let cursor = 0;
 
-  async function worker(): Promise<void> {
-    while (true) {
-      const index = cursor++;
-      if (index >= limited.length) return;
-      const originalUrl = limited[index]!;
-      try {
-        const result = await runParse(plugin, pluginCtx, originalUrl);
-        results[index] = { originalUrl, ok: true, result };
-      } catch (err) {
-        results[index] = {
-          originalUrl,
-          ok: false,
-          error: err instanceof Error ? err.message : '解析失败',
-        };
-      }
+  // 任务队列：每项保留原始 index（结果按原顺序回填）与已重试次数；风控重试会向队尾追加任务
+  const queue: { originalUrl: string; index: number; retries: number }[] = limited.map(
+    (originalUrl, index) => ({ originalUrl, index, retries: 0 }),
+  );
+  let head = 0;
+
+  // 动态并发降级：limit 为当前并发上限，active 为在跑的 worker 数。
+  // 命中风控时 limit-- （最低 1）；当 active 超过 limit，多余 worker 在下一轮循环顶主动退出。
+  // 事件循环单线程下「判断 active>limit + 自减 active」为同步原子段，收缩时至少保留 1 个 worker，不会全部退光。
+  const startConcurrency = Math.min(
+    Math.max(1, config.sourcePlugins.previewConcurrency),
+    limited.length,
+  );
+  let limit = startConcurrency;
+  let active = 0;
+
+  function downgradeOnRateLimit(): void {
+    if (limit > 1) {
+      limit -= 1;
+      console.warn(`[SourcePlugins] 命中风控，批量解析并发降至 ${limit}`);
     }
   }
 
-  const workerCount = Math.min(Math.max(1, config.sourcePlugins.previewConcurrency), limited.length);
-  await Promise.all(Array.from({ length: workerCount }, () => worker()));
+  async function worker(): Promise<void> {
+    active++;
+    try {
+      while (true) {
+        if (active > limit) return; // 并发已降级，多余 worker 退出（同步段，保证至少留 1 个）
+        if (head >= queue.length) return; // 队列已取空（含已追加的重试任务）
+        const task = queue[head++]!;
+        try {
+          const result = await runParse(plugin, pluginCtx, task.originalUrl);
+          results[task.index] = { originalUrl: task.originalUrl, ok: true, result };
+        } catch (err) {
+          const message = err instanceof Error ? err.message : '解析失败';
+          if (isRateLimitError(message)) {
+            downgradeOnRateLimit(); // 命中风控即降级，保护后续条目
+            if (task.retries < RATE_LIMIT_MAX_RETRIES) {
+              // 延迟后重排队：给上游喘息，避免立即重试加重风控；按已重试次数指数退避
+              await delay(RATE_LIMIT_RETRY_BASE_MS * 2 ** task.retries);
+              queue.push({ originalUrl: task.originalUrl, index: task.index, retries: task.retries + 1 });
+              continue;
+            }
+            // 重试已耗尽：落到下方记为失败
+          }
+          results[task.index] = { originalUrl: task.originalUrl, ok: false, error: message };
+        }
+      }
+    } finally {
+      active--;
+    }
+  }
+
+  await Promise.all(Array.from({ length: startConcurrency }, () => worker()));
   return results;
 }
 

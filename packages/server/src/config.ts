@@ -68,8 +68,8 @@ export const config = {
   sourcePlugins: {
     // 插件解析请求的全局默认超时（毫秒），注入 PluginContext
     timeoutMs: parseInt(process.env.SOURCE_PLUGIN_TIMEOUT_MS || '30000', 10),
-    // 批量预览 / 导入的并发数与单次上限
-    previewConcurrency: Math.max(1, parseInt(process.env.SOURCE_PLUGIN_PREVIEW_CONCURRENCY || '1', 10)),
+    // 批量预览 / 导入的「起始」并发数（默认 3；命中风控会在单次批量内自动逐级降到 1）与单次上限
+    previewConcurrency: Math.max(1, parseInt(process.env.SOURCE_PLUGIN_PREVIEW_CONCURRENCY || '3', 10)),
     maxPreviewBatch: Math.max(1, parseInt(process.env.SOURCE_PLUGIN_MAX_PREVIEW_BATCH || '50', 10)),
   },
   // 是否信任 CDN 回源头（CF-Connecting-IP / True-Client-IP）
